@@ -11,16 +11,13 @@ the implementation of a USD to OBJ converter tool for the Caldera map data set
 * a local clone of the Caldera map data set (clone from https://github.com/Activision/caldera)
 
 ### CMake with default build tools
-'''
-git clone --recurse-submodules https://github.com/Ragnaro0k/converter
-cd converter
-cmake -B build
-cmake --build build --config Release
-cmake --install build --config Release 
-cd install
-cd bin
-converter.exe
-'''
+* git clone --recurse-submodules https://github.com/Ragnaro0k/converter
+* cd converter
+* cmake -B build
+* cmake --build build --config Release
+* cmake --install build --config Release 
+* cd install/bin
+* converter.exe
 
 ### Usage
 refer to user_manual.pdf
