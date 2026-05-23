@@ -9,6 +9,7 @@ the implementation of a USD to OBJ converter tool for the Caldera map data set
 * GPU (NVIDIA 4070)
 * a working build of OpenUSD framework (clone from https://github.com/PixarAnimationStudios/OpenUSD and follow installation guide; after build is complete, set environment variables as instructed in terminal)
 * a local clone of the Caldera map data set (clone from https://github.com/Activision/caldera)
+* Python (same version as the one used to install OpenUSD)
 
 ### CMake with default build tools
 * git clone --recurse-submodules https://github.com/Ragnaro0k/converter
