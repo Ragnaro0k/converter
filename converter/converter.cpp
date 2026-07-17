@@ -140,7 +140,10 @@ int main()
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 
-	GLFWwindow* window = glfwCreateWindow(1280, 800, "Converter Viewer", nullptr, nullptr);
+	GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+	const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+	GLFWwindow* window = glfwCreateWindow(mode->width, mode->height, "Converter Viewer", nullptr, nullptr);
 	if (!window) {
 		std::cerr << "Failed to create a window!" << std::endl;
 		glfwTerminate();
@@ -186,6 +189,7 @@ int main()
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
+
 
 		ImGui::Begin("Converter Tools");
 		ImGui::Checkbox("Wireframe", &wireframe);

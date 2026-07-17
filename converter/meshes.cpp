@@ -34,7 +34,10 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 	py::module loader = py::module::import("usd_loader");
 	py::object pyMeshes = loader.attr("load_meshes")(pyPaths);
 	std::cout << "Python returned " << std::endl;
+	int meshCount = 0;
+	int verts = 0;
 	for (auto pyMesh : pyMeshes) {
+		meshCount++;
 		RawMesh mesh;
 
 		py::array_t<float> points = pyMesh["points"].cast<py::array_t<float>>();
@@ -71,9 +74,11 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 
 		mesh.transform = glm::make_mat4(mdata);
 
+		verts += mesh.vertices.size();
 		result.push_back(std::move(mesh));
 	}
-
+	std::cout << meshCount << " of meshes imported" << std::endl;
+	std::cout << verts << " of vertices imported" << std::endl;
 	return result;
 }
 
@@ -96,16 +101,16 @@ std::vector<uint32_t> triangulate(const RawMesh& mesh, int randSampl) {
 				mesh.indices.begin() + offset,
 				mesh.indices.begin() + offset + 3);
 		}
-		else if (count == 4) {
-			uint32_t i0 = mesh.indices[offset + 0];
-			uint32_t i1 = mesh.indices[offset + 1];
-			uint32_t i2 = mesh.indices[offset + 2];
-			uint32_t i3 = mesh.indices[offset + 3];
-
-			triangles.insert(triangles.end(), {
-				i0, i1, i2,
-				i0, i2, i3
-				});
+		else {
+			std::vector<uint32_t> vertices;
+			for (int i = 0; i < count; i++) {
+				vertices.push_back(mesh.indices[offset + i]);
+			}
+			for (int i = 1; i < count - 1; i++) {
+				triangles.insert(triangles.end(), {
+					vertices[0], vertices[i], vertices[i + 1]
+					});
+			}
 		}
 
 		offset += count;
