@@ -233,6 +233,7 @@ int main()
 				std::cerr << "Loading failed" << meshes.size() << " " << renderMesh.size() << std::endl;
 			}
 			for (auto& mesh : meshes) {
+				//std::cout << "Mesh processed" << std::endl;
 				nFaces += (mesh.triangles.size() / 3);
 			}
 			std::cout << "Bounding Box:" << std::endl;

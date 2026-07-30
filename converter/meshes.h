@@ -4,11 +4,13 @@
 #include <string>
 #include <glm/gtc/type_ptr.hpp>
 #include <limits>
+#include <string>
 
 
 struct Mesh {
 	std::vector<glm::vec3> vertices;
 	std::vector<uint32_t> triangles;
+	std::string name;
 };
 
 

@@ -19,6 +19,7 @@ struct RawMesh {
 	std::vector<glm::vec3> vertices;
 	std::vector<uint32_t> indices;
 	std::vector<uint32_t> counts;
+	std::string name;
 	glm::mat4 transform;
 };
 
@@ -39,6 +40,8 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 	for (auto pyMesh : pyMeshes) {
 		meshCount++;
 		RawMesh mesh;
+
+		mesh.name = pyMesh["name"].cast<std::string>();
 
 		py::array_t<float> points = pyMesh["points"].cast<py::array_t<float>>();
 		auto pbuf = points.request();
@@ -161,6 +164,7 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 		Mesh tmp;
 		tmp.vertices = m.vertices;
 		tmp.triangles = triangles;
+		tmp.name = m.name;
 		rotateMesh(tmp);
 		meshes.push_back(tmp);
 	}
@@ -260,7 +264,6 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 	if (!file.is_open()) {
 		throw std::runtime_error("Cannot open file: " + filename);
 	}
-	int count = 1;
 	int vertexOffset = 1;
 
 	for (auto& mesh : meshes) {
@@ -290,7 +293,7 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 			reducedmesh.triangles[i] = reducedOffset[reducedmesh.triangles[i]];
 		}
 
-		file << "o _" << count << "Shape\n";
+		file << "o _" << mesh.name << "\n";
 
 		for (const auto& v : reducedmesh.vertices) {
 			file << "v " << v.x << " " << v.y << " " << v.z << "\n";
@@ -301,7 +304,6 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 		}
 
 		vertexOffset += reducedmesh.vertices.size();
-		count++;
 	}
 	std::cout << "Exported reduced!" << std::endl;
 }
@@ -311,11 +313,10 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, 
 	if (!file.is_open()) {
 		throw std::runtime_error("Cannot open file: " + filename);
 	}
-	int count = 1;
 	int vertexOffset = 1;
 	for (auto mesh : meshes) {
 
-		file << "o _" << count << "Shape\n";
+		file << "o " << mesh.name << "\n";
 
 		for (const auto& v : mesh.vertices) {
 			file << "v " << v.x << " " << v.y << " " << v.z << "\n";
@@ -329,7 +330,6 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, 
 		}
 
 		vertexOffset += mesh.vertices.size();
-		count++;
 	}
 
 

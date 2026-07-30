@@ -156,7 +156,9 @@ def load_meshes(paths, time=Usd.TimeCode.Default()):
             continue
 
         mesh = UsdGeom.Mesh(prim)
-
+        name = str(prim.GetName())
+        if name is "":
+            name = "No name given"
         points = mesh.GetPointsAttr().Get(time)
         counts = mesh.GetFaceVertexCountsAttr().Get(time)
         indices = mesh.GetFaceVertexIndicesAttr().Get(time)
@@ -170,6 +172,7 @@ def load_meshes(paths, time=Usd.TimeCode.Default()):
 
         meshes.append({
             "primPath": str(prim.GetPath()),
+            "name": name,
             "points": points,
             "indices": indices,
             "counts": counts,
