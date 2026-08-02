@@ -179,7 +179,8 @@ int main()
 	int selectedPath = -1;
 	int randomSampling = 1;
 	uint32_t nFaces = 0;
-	bool reduced = false;
+	bool stats = false;
+	bool statsOnly = false;
 
 	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
 
@@ -225,6 +226,8 @@ int main()
 		}
 		if (ImGui::Button("Import and render") && !paths.empty()) {
 			nFaces = 0;
+			BoundingBox tmp;
+			box = tmp;
 			meshes = importMesh(paths, renderMesh, randomSampling, box);
 			if (!meshes.empty() && !renderMesh.empty()) {
 				std::cout << "Mesh loaded and rotated" << std::endl;
@@ -246,16 +249,19 @@ int main()
 		}
 		ImGui::End();
 		ImGui::Begin("Export options");
-		ImGui::Checkbox("Export reduced", &reduced);
+		ImGui::Checkbox("Export stats", &stats);
+		ImGui::Checkbox("Export stats only", &statsOnly);
 		if (ImGui::Button("Export") && !meshes.empty()) {
 			std::string savePath = saveFile();
 
 			if (!savePath.empty()) {
-				if (!reduced) {
-					exportMeshes(meshes, savePath, box);
+				if (xMaxWorld != 1 || xMinWorld != 0 ||
+					yMaxWorld != 1 || yMinWorld != 0 ||
+					zMaxWorld != 1 || zMinWorld != 0) {
+					exportReduced(meshes, savePath, box, stats, statsOnly);
 				}
 				else {
-					exportReduced(meshes, savePath, box);
+					exportMeshes(meshes, savePath, box, stats, statsOnly);
 				}
 			}
 		}

@@ -20,9 +20,109 @@ struct RawMesh {
 	std::vector<uint32_t> indices;
 	std::vector<uint32_t> counts;
 	std::string name;
+	float mpu;
 	glm::mat4 transform;
 };
 
+
+void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string fname) {
+	std::cout << "Starting data export..." << std::endl;
+	int segmentsRow = 128;
+	int triangles = 0;
+	int verts = 0;
+	float sizeX = -1;
+	float sizeY = -1;
+	float sizeZ = -1;
+	float volume = -1;
+	float density = -1; // triangles divided by volume; triangles per cubic metre
+	float avArea = 0; // average surface of a triangle - expand to contain more data?
+	float distribution = 0;
+	float occupancyRatio = -1;
+	int objects = 0;
+
+	std::vector<int> segments(segmentsRow * segmentsRow * segmentsRow, 0);
+
+	sizeX = box.Xplus - box.Xminus;
+	sizeY = box.Yplus - box.Yminus;
+	sizeZ = box.Zplus - box.Zminus;
+	volume = sizeX * sizeY * sizeZ;
+
+	float xStep = sizeX / segmentsRow;
+	float yStep = sizeY / segmentsRow;
+	float zStep = sizeZ / segmentsRow;
+
+	std::cout << "Initiating for loop..." << std::endl;
+	for (auto& m : meshes) {
+		objects++;
+		triangles += m.triangles.size() / 3;
+		verts += m.vertices.size();
+
+		for (int i = 0; i < m.triangles.size(); i += 3) {
+			//std::cout << "vectors" << std::endl;
+			glm::vec3 vec1 = glm::vec3(m.vertices[m.triangles[i + 1]] - m.vertices[m.triangles[i]]);
+			glm::vec3 vec2 = glm::vec3(m.vertices[m.triangles[i + 2]] - m.vertices[m.triangles[i]]);
+			float area = glm::length(glm::cross(vec1, vec2)) / 2;
+			avArea += area;
+
+			//calculate distribution data
+			//std::cout << "distribution" << std::endl;
+			glm::vec3 centroid = glm::vec3(m.vertices[m.triangles[i]] + m.vertices[m.triangles[i + 1]] + m.vertices[m.triangles[i + 2]]);
+			centroid /= 3;
+			int x = (centroid.x - box.Xminus) / xStep;
+			int y = (centroid.y - box.Yminus) / yStep;
+			int z = (centroid.z - box.Zminus) / zStep;
+			x = std::clamp(x, 0, segmentsRow-1);
+			y = std::clamp(y, 0, segmentsRow-1);
+			z = std::clamp(z, 0, segmentsRow-1);
+
+			//std::cout << "segments" << std::endl;
+			segments[y * segmentsRow + x + z * segmentsRow * segmentsRow]++;
+
+
+		}
+
+	}
+	std::cout << "Calculating avg area..." << std::endl;
+	avArea = (avArea / static_cast<float>(triangles))*10000;
+	density = static_cast<float>(triangles) / volume;
+
+	//evaluate distribution
+	int fullCells = 0;
+	for (auto& cell : segments) {
+		if (cell > 0) {
+			fullCells++;
+			float p = static_cast<float>(cell) / static_cast<float>(triangles);
+			distribution -= p * glm::log2(p);
+		}
+	}
+
+	//normalize
+	if (fullCells > 0) distribution = distribution / glm::log2(static_cast<float>(fullCells));
+
+	std::cout << "full cells: " << fullCells << std::endl;
+
+	//occupancy ratio
+	occupancyRatio = (static_cast<float>(fullCells) / static_cast<float>(segmentsRow * segmentsRow * segmentsRow)) * 100;
+
+	std::cout << "Opening file..." << std::endl;
+	fname.replace(fname.end() - 4, fname.end(), "_stats.txt");
+	std::ofstream file(fname);
+	if (!file.is_open()) {
+		throw std::runtime_error("Cannot open file: " + fname + "_stats.txt");
+	}
+
+	file << "Number of meshes: " << objects << std::endl;
+	file << "Number of triangles: " << triangles << std::endl;
+	file << "Number of vertices: " << verts << std::endl;
+	file << "Volume in cubic metres: " << volume << " (" << sizeX << " * " << sizeY << " * " << sizeZ << ")" << std::endl;
+	file << "Average triangle count per 1 cubic metre: " << density << std::endl;
+	file << "Average surface area of a single triangle (square cm): " << avArea << std::endl;
+	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even triangle distribution): " << distribution << std::endl;
+	file << "Scene occupancy ratio (area of the scene containing at least one triangle): " << occupancyRatio << "%" << std::endl;
+	file.close();
+	std::cout << "Statistics exported to " << fname << std::endl;
+
+}
 
 std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 	std::cout << "Starting python loader..." << std::endl;
@@ -42,43 +142,50 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 		RawMesh mesh;
 
 		mesh.name = pyMesh["name"].cast<std::string>();
+		std::size_t found = mesh.name.find("brush");
+		if (found == std::string::npos) {
+			//mesh.mpu = pyMesh["mpu"].cast<float>();
 
-		py::array_t<float> points = pyMesh["points"].cast<py::array_t<float>>();
-		auto pbuf = points.request();
+			py::array_t<float> points = pyMesh["points"].cast<py::array_t<float>>();
+			auto pbuf = points.request();
 
-		float* pdata = static_cast<float*>(pbuf.ptr);
-		size_t vertexCount = pbuf.shape[0];
+			float* pdata = static_cast<float*>(pbuf.ptr);
+			size_t vertexCount = pbuf.shape[0];
 
-		mesh.vertices.resize(vertexCount);
-		for (size_t i = 0; i < vertexCount; i++) {
-			mesh.vertices[i] = glm::vec3(
-				pdata[i * 3 + 0],
-				pdata[i * 3 + 1],
-				pdata[i * 3 + 2]
-			);
+			mesh.vertices.resize(vertexCount);
+			for (size_t i = 0; i < vertexCount; i++) {
+				mesh.vertices[i] = glm::vec3(
+					pdata[i * 3 + 0],
+					pdata[i * 3 + 1],
+					pdata[i * 3 + 2]
+				);
+			}
+
+			py::array_t<uint32_t> indices = pyMesh["indices"].cast<py::array_t<uint32_t>>();
+			auto ibuf = indices.request();
+
+			uint32_t* idata = static_cast<uint32_t*>(ibuf.ptr);
+			mesh.indices.assign(idata, idata + ibuf.shape[0]);
+
+			py::array_t<uint32_t> counts = pyMesh["counts"].cast<py::array_t<uint32_t>>();
+			auto cbuf = counts.request();
+
+			uint32_t* cdata = static_cast<uint32_t*>(cbuf.ptr);
+			mesh.counts.assign(cdata, cdata + cbuf.shape[0]);
+
+			py::array_t<float> matrix = pyMesh["matrix"].cast<py::array_t<float>>();
+			auto mbuf = matrix.request();
+
+			float* mdata = static_cast<float*>(mbuf.ptr);
+
+			mesh.transform = glm::make_mat4(mdata);
+
+			verts += mesh.vertices.size();
+			result.push_back(std::move(mesh));
+		}else {
+			//std::cout << "Brush located!" << std::endl;
 		}
 
-		py::array_t<uint32_t> indices = pyMesh["indices"].cast<py::array_t<uint32_t>>();
-		auto ibuf = indices.request();
-
-		uint32_t* idata = static_cast<uint32_t*>(ibuf.ptr);
-		mesh.indices.assign(idata, idata + ibuf.shape[0]);
-
-		py::array_t<uint32_t> counts = pyMesh["counts"].cast<py::array_t<uint32_t>>();
-		auto cbuf = counts.request();
-
-		uint32_t* cdata = static_cast<uint32_t*>(cbuf.ptr);
-		mesh.counts.assign(cdata, cdata + cbuf.shape[0]);
-
-		py::array_t<float> matrix = pyMesh["matrix"].cast<py::array_t<float>>();
-		auto mbuf = matrix.request();
-
-		float* mdata = static_cast<float*>(mbuf.ptr);
-
-		mesh.transform = glm::make_mat4(mdata);
-
-		verts += mesh.vertices.size();
-		result.push_back(std::move(mesh));
 	}
 	std::cout << meshCount << " of meshes imported" << std::endl;
 	std::cout << verts << " of vertices imported" << std::endl;
@@ -178,7 +285,7 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 		}
 		vertexOffset += static_cast<uint32_t>(mesh.vertices.size());
 		if (vertexOffset > MAX_TRIANGLES) {
-			std::cout << "Buffer limit reached, creating new buffer..." << std::endl;
+			//std::cout << "Buffer limit reached, creating new buffer..." << std::endl;
 			renderMesh.push_back(tmp);
 			tmp.vertices.clear();
 			tmp.triangles.clear();
@@ -199,6 +306,14 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 			if (vert.z < box.lim_Zminus) box.lim_Zminus = vert.z;
 		}
 	}
+
+	/*box.lim_Xminus -= 1;
+	box.lim_Yminus -= 1;
+	box.lim_Zminus -= 1;
+	box.lim_Xplus += 1;
+	box.lim_Yplus += 1;
+	box.lim_Zplus += 1;*/
+
 	box.Xplus = box.lim_Xplus;
 	box.Xminus = box.lim_Xminus;
 	box.Yplus = box.lim_Yplus;
@@ -259,12 +374,8 @@ bool isInBounds(glm::vec3 vertex, BoundingBox& box) {
 	return true;
 }
 
-void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box) {
-	std::ofstream file(filename);
-	if (!file.is_open()) {
-		throw std::runtime_error("Cannot open file: " + filename);
-	}
-	int vertexOffset = 1;
+void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats, bool statsOnly) {
+	std::vector<Mesh> reducedMeshes;
 
 	for (auto& mesh : meshes) {
 		Mesh reducedmesh;
@@ -292,23 +403,38 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 		for (uint32_t i = 0; i < reducedmesh.triangles.size(); i++) {
 			reducedmesh.triangles[i] = reducedOffset[reducedmesh.triangles[i]];
 		}
+		if (!reducedmesh.vertices.empty()) {
+			reducedMeshes.push_back(reducedmesh);
+		}
+	}
+	if (stats) exportStats(reducedMeshes, box, filename);
+	if (statsOnly) return;
 
+	std::ofstream file(filename);
+	if (!file.is_open()) {
+		throw std::runtime_error("Cannot open file: " + filename);
+	}
+	int vertexOffset = 1;
+	for(auto& mesh : reducedMeshes) {
 		file << "o _" << mesh.name << "\n";
 
-		for (const auto& v : reducedmesh.vertices) {
+		for (const auto& v : mesh.vertices) {
 			file << "v " << v.x << " " << v.y << " " << v.z << "\n";
 		}
 
-		for (int i = 0; i < reducedmesh.triangles.size(); i += 3) {
-			file << "f " << reducedmesh.triangles[i] + vertexOffset << " " << reducedmesh.triangles[i + 1] + vertexOffset << " " << reducedmesh.triangles[i + 2] + vertexOffset << "\n";
+		for (int i = 0; i < mesh.triangles.size(); i += 3) {
+			file << "f " << mesh.triangles[i] + vertexOffset << " " << mesh.triangles[i + 1] + vertexOffset << " " << mesh.triangles[i + 2] + vertexOffset << "\n";
 		}
 
-		vertexOffset += reducedmesh.vertices.size();
+		vertexOffset += mesh.vertices.size();
 	}
-	std::cout << "Exported reduced!" << std::endl;
+	file.close();
+	std::cout << "Exported reduced scene to " << filename << std::endl;
 }
 
-void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box) {
+void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats, bool statsOnly) {
+	if (stats) exportStats(meshes, box, filename);
+	if (statsOnly) return;
 	std::ofstream file(filename);
 	if (!file.is_open()) {
 		throw std::runtime_error("Cannot open file: " + filename);
@@ -324,9 +450,7 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, 
 
 
 		for (int i = 0; i < mesh.triangles.size(); i+=3) {
-			if (isInBounds(mesh.vertices[mesh.triangles[i]], box) || isInBounds(mesh.vertices[mesh.triangles[i+1]], box) || isInBounds(mesh.vertices[mesh.triangles[i+2]], box)) {
-				file << "f " << mesh.triangles[i] + vertexOffset << " " << mesh.triangles[i + 1] + vertexOffset << " " << mesh.triangles[i + 2] + vertexOffset << "\n";
-			}
+			file << "f " << mesh.triangles[i] + vertexOffset << " " << mesh.triangles[i + 1] + vertexOffset << " " << mesh.triangles[i + 2] + vertexOffset << "\n";
 		}
 
 		vertexOffset += mesh.vertices.size();
@@ -334,6 +458,8 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, 
 
 
 	file.close();
-	std::cout << "Exported!" << std::endl;
+	std::cout << "Exported scene to " << filename << std::endl;
 }
+
+
 
