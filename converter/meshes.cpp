@@ -24,8 +24,50 @@ struct RawMesh {
 	glm::mat4 transform;
 };
 
+int getAABBvector(std::vector<int>& segmentsAABB, const std::vector<Mesh>& meshes, BoundingBox& box,
+					float xStep, float yStep, float zStep, const int segmentsRow) {
 
-void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string fname) {
+	int cellsCovered = 0;
+	for (auto& m : meshes) {
+		for (int i = 0; i < m.triangles.size(); i += 3) {
+			glm::vec3 v0 = m.vertices[m.triangles[i]];
+			glm::vec3 v1 = m.vertices[m.triangles[i+1]];
+			glm::vec3 v2 = m.vertices[m.triangles[i+2]];
+
+			glm::vec3 minP = glm::min(glm::min(v0, v1), v2);
+			glm::vec3 maxP = glm::max(glm::max(v0, v1), v2);
+
+			int minX = static_cast<int>((minP.x - box.Xminus) / xStep);
+			int maxX = static_cast<int>((maxP.x - box.Xminus) / xStep);
+
+			int minY = static_cast<int>((minP.y - box.Yminus) / yStep);
+			int maxY = static_cast<int>((maxP.y - box.Yminus) / yStep);
+
+			int minZ = static_cast<int>((minP.z - box.Zminus) / zStep);
+			int maxZ = static_cast<int>((maxP.z - box.Zminus) / zStep);
+
+			minX = std::clamp(minX, 0, segmentsRow - 1);
+			maxX = std::clamp(maxX, 0, segmentsRow - 1);
+			minY = std::clamp(minY, 0, segmentsRow - 1);
+			maxY = std::clamp(maxY, 0, segmentsRow - 1);
+			minZ = std::clamp(minZ, 0, segmentsRow - 1);
+			maxZ = std::clamp(maxZ, 0, segmentsRow - 1);
+
+
+			for (int z = minZ; z <= maxZ; z++) {
+				for (int y = minY; y <= maxY; y++) {
+					for (int x = minX; x <= maxX; x++) {
+						cellsCovered++;
+						segmentsAABB[y * segmentsRow + x + z * segmentsRow * segmentsRow]++;
+					}
+				}
+			}
+		}
+	}
+	return cellsCovered;
+}
+
+void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string fname, bool reduced) {
 	std::cout << "Starting data export..." << std::endl;
 	int segmentsRow = 128;
 	int triangles = 0;
@@ -39,8 +81,8 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 	float distribution = 0;
 	float occupancyRatio = -1;
 	int objects = 0;
+	double cv = -1;
 
-	std::vector<int> segments(segmentsRow * segmentsRow * segmentsRow, 0);
 
 	sizeX = box.Xplus - box.Xminus;
 	sizeY = box.Yplus - box.Yminus;
@@ -50,6 +92,11 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 	float xStep = sizeX / segmentsRow;
 	float yStep = sizeY / segmentsRow;
 	float zStep = sizeZ / segmentsRow;
+
+	std::vector<int> segments(segmentsRow * segmentsRow * segmentsRow, 0);
+	std::vector<int> segmentsAABB(segmentsRow * segmentsRow * segmentsRow, 0);
+	int AABBcoverage = getAABBvector(segmentsAABB, meshes, box, xStep, yStep, zStep, segmentsRow);
+
 
 	std::cout << "Initiating for loop..." << std::endl;
 	for (auto& m : meshes) {
@@ -103,22 +150,131 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 
 	//occupancy ratio
 	occupancyRatio = (static_cast<float>(fullCells) / static_cast<float>(segmentsRow * segmentsRow * segmentsRow)) * 100;
-
+	double mean = static_cast<double>(triangles) /
+		static_cast<double>(fullCells);
+	double squaredSum = 0.0;
 	std::cout << "Opening file..." << std::endl;
-	fname.replace(fname.end() - 4, fname.end(), "_stats.txt");
+	//fname.replace(fname.end() - 4, fname.end(), "_stats.txt");
 	std::ofstream file(fname);
 	if (!file.is_open()) {
 		throw std::runtime_error("Cannot open file: " + fname + "_stats.txt");
 	}
 
+	for (auto cell : segments)
+	{
+		if (cell > 0)
+		{
+			double diff = cell - mean;
+			squaredSum += diff * diff;
+		}
+	}
+	double variance = squaredSum / fullCells;
+	double stddev = std::sqrt(variance);
+	cv = stddev / mean;
+
+	std::vector<int> occupancies;
+	for (auto cell : segments) {
+		if (cell > 0) occupancies.push_back(cell);
+	}
+	std::sort(occupancies.begin(), occupancies.end());
+	double sum = 0.0;
+	double weightedSum = 0.0;
+	for (int i = 0; i < occupancies.size(); ++i) {
+		double x = occupancies[i];
+		sum += x;
+		weightedSum += (i + 1) * x;
+	}
+	double n = static_cast<double>(occupancies.size());
+	double gini = (2.0 * weightedSum) / (n * sum) - (n + 1.0) / n;
+
+	std::sort(segments.begin(), segments.end());
+	sum = 0.0;
+	weightedSum = 0.0;
+	for (int i = 0; i < segments.size(); ++i) {
+		double x = segments[i];
+		sum += x;
+		weightedSum += (i + 1) * x;
+	}
+	double n2 = static_cast<double>(segments.size());
+	double giniFull = (2.0 * weightedSum) / (n2 * sum) - (n2 + 1.0) / n2;
+
+	int AABBfullCells = 0;
+	float AABBdistribution = 0;
+	for (auto& cell : segmentsAABB) {
+		if (cell > 1) {
+			AABBfullCells++;
+			float p = static_cast<float>(cell) / static_cast<float>(AABBcoverage);
+			AABBdistribution -= p * glm::log2(p);
+		}
+	}
+	if (AABBfullCells > 1) AABBdistribution = AABBdistribution / glm::log2(static_cast<float>(AABBfullCells));
+	else AABBdistribution = 0;
+
+	double avgTriangleSegments = static_cast<double>(AABBcoverage) / static_cast<double>(triangles);
+	float AABBoccupancyRatio = (static_cast<float>(AABBfullCells) / static_cast<float>(segmentsRow * segmentsRow * segmentsRow)) * 100;
+
+	std::vector<int> AABBoccupancies;
+	for (auto cell : segmentsAABB) {
+		if (cell > 0) AABBoccupancies.push_back(cell);
+	}
+	std::sort(AABBoccupancies.begin(), AABBoccupancies.end());
+	double AABBsum = 0.0;
+	double AABBweightedSum = 0.0;
+	for (int i = 0; i < AABBoccupancies.size(); ++i) {
+		double x = AABBoccupancies[i];
+		AABBsum += x;
+		AABBweightedSum += (i + 1) * x;
+	}
+	double AABBn = static_cast<double>(AABBoccupancies.size());
+	double AABBgini = (2.0 * AABBweightedSum) / (AABBn * AABBsum) - (AABBn + 1.0) / AABBn;
+
+	std::sort(segmentsAABB.begin(), segmentsAABB.end());
+	AABBsum = 0.0;
+	AABBweightedSum = 0.0;
+	for (int i = 0; i < segmentsAABB.size(); ++i) {
+		double AABBx = segmentsAABB[i];
+		AABBsum += AABBx;
+		AABBweightedSum += (i + 1) * AABBx;
+	}
+	double AABBn2 = static_cast<double>(segmentsAABB.size());
+	double AABBginiFull = (2.0 * AABBweightedSum) / (AABBn2 * AABBsum) - (AABBn2 + 1.0) / AABBn2;
+
+	file << "Number of segments used: " << segmentsRow << "^3" << std::endl;
 	file << "Number of meshes: " << objects << std::endl;
 	file << "Number of triangles: " << triangles << std::endl;
 	file << "Number of vertices: " << verts << std::endl;
 	file << "Volume in cubic metres: " << volume << " (" << sizeX << " * " << sizeY << " * " << sizeZ << ")" << std::endl;
-	file << "Average triangle count per 1 cubic metre: " << density << std::endl;
 	file << "Average surface area of a single triangle (square cm): " << avArea << std::endl;
-	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even triangle distribution): " << distribution << std::endl;
+	file << "Average triangle count per 1 cubic metre: " << density << std::endl;
+	file << std::endl;
+	file << "Data based on triangle centroids:" << std::endl;
 	file << "Scene occupancy ratio (area of the scene containing at least one triangle): " << occupancyRatio << "%" << std::endl;
+	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even distribution): " << distribution << std::endl;
+	file << "Coefficient of variation: " << cv << std::endl;
+	file << "Gini coefficient of occupied cells: " << gini << std::endl;
+	file << "Gini coefficient of all cells: " << giniFull << std::endl;
+	file << std::endl;
+	file << "Data based on triangle AABB dimensions:" << std::endl;
+	file << "Average triangle segments coverage: " << avgTriangleSegments << std::endl;
+	file << "Triangle AABB occupancy ratio: " << AABBoccupancyRatio << "%" << std::endl;
+	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even distribution): " << AABBdistribution << std::endl;
+	file << "Gini coefficient of occupied cells: " << AABBgini << std::endl;
+	file << "Gini coefficient of all cells: " << AABBginiFull << std::endl;
+	
+	file << std::endl;
+	if (reduced) {
+		file << "Bounding box values:" << std::endl;
+		file << "X size: " << (box.Xplus - box.Xminus)/ (box.lim_Xplus - box.lim_Xminus) << std::endl;
+		file << "X offset: " << (box.Xminus - box.lim_Xminus)/ (box.lim_Xplus - box.lim_Xminus) << std::endl;
+		file << "Y size: " << (box.Yplus - box.Yminus) / (box.lim_Yplus - box.lim_Yminus) << std::endl;
+		file << "Y offset: " << (box.Yminus - box.lim_Yminus) / (box.lim_Yplus - box.lim_Yminus) << std::endl;
+		file << "Z size: " << (box.Zplus - box.Zminus) / (box.lim_Zplus - box.lim_Zminus) << std::endl;
+		file << "Z offset: " << (box.Zminus - box.lim_Zminus) / (box.lim_Zplus - box.lim_Zminus) << std::endl;
+	}
+	else {
+		file << "Default bounding box used for export" << std::endl;
+	}
+
 	file.close();
 	std::cout << "Statistics exported to " << fname << std::endl;
 
@@ -374,7 +530,7 @@ bool isInBounds(glm::vec3 vertex, BoundingBox& box) {
 	return true;
 }
 
-void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats, bool statsOnly) {
+void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats) {
 	std::vector<Mesh> reducedMeshes;
 
 	for (auto& mesh : meshes) {
@@ -407,8 +563,10 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 			reducedMeshes.push_back(reducedmesh);
 		}
 	}
-	if (stats) exportStats(reducedMeshes, box, filename);
-	if (statsOnly) return;
+	if (stats) {
+		exportStats(reducedMeshes, box, filename, true);
+		return;
+	}
 
 	std::ofstream file(filename);
 	if (!file.is_open()) {
@@ -432,9 +590,12 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 	std::cout << "Exported reduced scene to " << filename << std::endl;
 }
 
-void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats, bool statsOnly) {
-	if (stats) exportStats(meshes, box, filename);
-	if (statsOnly) return;
+void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats) {
+	if (stats) {
+		exportStats(meshes, box, filename, false);
+		return;
+	}
+
 	std::ofstream file(filename);
 	if (!file.is_open()) {
 		throw std::runtime_error("Cannot open file: " + filename);

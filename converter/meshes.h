@@ -42,6 +42,6 @@ void rotateMesh(Mesh& mesh);
 
 std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<RenderMesh>& renderMesh, int randSampl, BoundingBox& box);
 
-void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats, bool statsOnly);
+void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats);
 
-void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats, bool statsOnly);
+void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats);

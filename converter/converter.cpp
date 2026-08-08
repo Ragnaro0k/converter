@@ -90,7 +90,7 @@ GLuint createShader() {
 	return prog;
 }
 
-std::string saveFile() {
+std::string saveFileObj() {
 	char filename[MAX_PATH] = "";
 
 	OPENFILENAMEA ofn{};
@@ -100,6 +100,24 @@ std::string saveFile() {
 	ofn.nMaxFile = MAX_PATH;
 	ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
 	ofn.lpstrDefExt = "obj";
+
+	if (GetSaveFileNameA(&ofn)) {
+		return std::string(filename);
+	}
+
+	return ""; // user canceled
+}
+
+std::string saveFileTxt() {
+	char filename[MAX_PATH] = "";
+
+	OPENFILENAMEA ofn{};
+	ofn.lStructSize = sizeof(ofn);
+	ofn.lpstrFilter = "TXT Files (*.txt)\0*.txt\0All Files (*.*)\0*.*\0";
+	ofn.lpstrFile = filename;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+	ofn.lpstrDefExt = "txt";
 
 	if (GetSaveFileNameA(&ofn)) {
 		return std::string(filename);
@@ -190,8 +208,9 @@ int main()
 		ImGui_ImplOpenGL3_NewFrame();
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
-
-
+		ImVec2 display = ImGui::GetIO().DisplaySize;
+		ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(500.0f / 1920.0f * display.x, 220.0f / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Converter Tools");
 		ImGui::Checkbox("Wireframe", &wireframe);
 		ImGui::Text("Number of faces: %d", nFaces);
@@ -199,10 +218,38 @@ int main()
 		ImGui::SliderFloat("Zoom speed", &zoomSpeed, 1.0f, 100.0f);
 		ImGui::SliderInt("Random Sampling", &randomSampling, 1, 10);
 		ImGui::Text("Drag mouse to rotate");
-
+		if (ImGui::Button("Load and render") && !paths.empty()) {
+			nFaces = 0;
+			BoundingBox tmp;
+			box = tmp;
+			meshes = importMesh(paths, renderMesh, randomSampling, box);
+			if (!meshes.empty() && !renderMesh.empty()) {
+				std::cout << "Mesh loaded and rotated" << std::endl;
+			}
+			else {
+				std::cerr << "Loading failed" << meshes.size() << " " << renderMesh.size() << std::endl;
+			}
+			for (auto& mesh : meshes) {
+				nFaces += (mesh.triangles.size() / 3);
+			}
+			std::cout << "Bounding Box:" << std::endl;
+			std::cout << "+X: " << box.Xplus << std::endl;
+			std::cout << "-X: " << box.Xminus << std::endl;
+			std::cout << "+Y: " << box.Yplus << std::endl;
+			std::cout << "-Y: " << box.Yminus << std::endl;
+			std::cout << "+Z: " << box.Zplus << std::endl;
+			std::cout << "-Z: " << box.Zminus << std::endl;
+		}
+		if (ImGui::Button("Clear View")) {
+			meshes.clear();
+			renderMesh.clear();
+		}
 		ImGui::End();
 
-		ImGui::Begin("Included paths");
+
+		ImGui::SetNextWindowPos(ImVec2(0, 220.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(300.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::Begin("Paths management");
 
 		if (ImGui::Button("Add path")) {
 			std::string selectedPath = openFile();
@@ -224,51 +271,49 @@ int main()
 				selectedPath = i;
 			}
 		}
-		if (ImGui::Button("Import and render") && !paths.empty()) {
-			nFaces = 0;
-			BoundingBox tmp;
-			box = tmp;
-			meshes = importMesh(paths, renderMesh, randomSampling, box);
-			if (!meshes.empty() && !renderMesh.empty()) {
-				std::cout << "Mesh loaded and rotated" << std::endl;
-			}
-			else {
-				std::cerr << "Loading failed" << meshes.size() << " " << renderMesh.size() << std::endl;
-			}
-			for (auto& mesh : meshes) {
-				//std::cout << "Mesh processed" << std::endl;
-				nFaces += (mesh.triangles.size() / 3);
-			}
-			std::cout << "Bounding Box:" << std::endl;
-			std::cout << "+X: " << box.Xplus << std::endl;
-			std::cout << "-X: " << box.Xminus << std::endl;
-			std::cout << "+Y: " << box.Yplus << std::endl;
-			std::cout << "-Y: " << box.Yminus << std::endl;
-			std::cout << "+Z: " << box.Zplus << std::endl;
-			std::cout << "-Z: " << box.Zminus << std::endl;
-		}
+
 		ImGui::End();
+
+
+		ImGui::SetNextWindowPos(ImVec2(1720.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Export options");
-		ImGui::Checkbox("Export stats", &stats);
-		ImGui::Checkbox("Export stats only", &statsOnly);
-		if (ImGui::Button("Export") && !meshes.empty()) {
-			std::string savePath = saveFile();
+		if (ImGui::Button("Export models") && !meshes.empty()) {
+			std::string savePath = saveFileObj();
 
 			if (!savePath.empty()) {
 				if (xMaxWorld != 1 || xMinWorld != 0 ||
 					yMaxWorld != 1 || yMinWorld != 0 ||
 					zMaxWorld != 1 || zMinWorld != 0) {
-					exportReduced(meshes, savePath, box, stats, statsOnly);
+					exportReduced(meshes, savePath, box, false);
 				}
 				else {
-					exportMeshes(meshes, savePath, box, stats, statsOnly);
+					exportMeshes(meshes, savePath, box, false);
+				}
+			}
+		}
+		if (ImGui::Button("Export stats") && !meshes.empty()) {
+			std::string savePath = saveFileTxt();
+
+			if (!savePath.empty()) {
+				if (xMaxWorld != 1 || xMinWorld != 0 ||
+					yMaxWorld != 1 || yMinWorld != 0 ||
+					zMaxWorld != 1 || zMinWorld != 0) {
+					exportReduced(meshes, savePath, box, true);
+				}
+				else {
+					exportMeshes(meshes, savePath, box, true);
 				}
 			}
 		}
 
 		ImGui::End();
 
-		ImGui::Begin("Renderer controls");
+
+
+		ImGui::SetNextWindowPos(ImVec2(0, 780.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(display.x, 300.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::Begin("Bounding box size");
 		ImGui::SliderFloat("X size", &xMaxWorld, 0.0f, 1.0f);
 		ImGui::SliderFloat("X offset", &xMinWorld, 0.0f, 1.0f);
 		ImGui::SliderFloat("Y size", &yMaxWorld, 0.0f, 1.0f);
@@ -276,10 +321,7 @@ int main()
 		ImGui::SliderFloat("Z size", &zMaxWorld, 0.0f, 1.0f);
 		ImGui::SliderFloat("Z offset", &zMinWorld, 0.0f, 1.0f);
 
-		if (ImGui::Button("Clear View")) {
-			meshes.clear();
-			renderMesh.clear();
-		}
+
 		ImGui::End();
 
 		box.Xminus = box.lim_Xminus + xMinWorld * (box.lim_Xplus - box.lim_Xminus);
