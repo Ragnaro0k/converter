@@ -67,6 +67,20 @@ int getAABBvector(std::vector<int>& segmentsAABB, const std::vector<Mesh>& meshe
 	return cellsCovered;
 }
 
+/*
+* 
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*
+*/
+
 void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string fname, bool reduced) {
 	std::cout << "Starting data export..." << std::endl;
 	int segmentsRow = 128;
@@ -242,6 +256,7 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 	file << "Number of segments used: " << segmentsRow << "^3" << std::endl;
 	file << "Number of meshes: " << objects << std::endl;
 	file << "Number of triangles: " << triangles << std::endl;
+	file << "Average number of triangles per object: " << static_cast<float>(triangles)/static_cast<float>(objects) << std::endl;
 	file << "Number of vertices: " << verts << std::endl;
 	file << "Volume in cubic metres: " << volume << " (" << sizeX << " * " << sizeY << " * " << sizeZ << ")" << std::endl;
 	file << "Average surface area of a single triangle (square cm): " << avArea << std::endl;
@@ -299,7 +314,7 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 
 		mesh.name = pyMesh["name"].cast<std::string>();
 		std::size_t found = mesh.name.find("brush");
-		if (found == std::string::npos) {
+		if (found == std::string::npos && !(mesh.name.substr(0, 3) == "geo")) {
 			//mesh.mpu = pyMesh["mpu"].cast<float>();
 
 			py::array_t<float> points = pyMesh["points"].cast<py::array_t<float>>();
@@ -574,7 +589,7 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 	}
 	int vertexOffset = 1;
 	for(auto& mesh : reducedMeshes) {
-		file << "o _" << mesh.name << "\n";
+		file << "o " << mesh.name << "\n";
 
 		for (const auto& v : mesh.vertices) {
 			file << "v " << v.x << " " << v.y << " " << v.z << "\n";
