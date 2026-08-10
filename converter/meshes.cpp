@@ -253,7 +253,7 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 	double AABBn2 = static_cast<double>(segmentsAABB.size());
 	double AABBginiFull = (2.0 * AABBweightedSum) / (AABBn2 * AABBsum) - (AABBn2 + 1.0) / AABBn2;
 
-	file << "Number of segments used: " << segmentsRow << "^3" << std::endl;
+	file << "Number of segments used to divide the scene: " << segmentsRow << "^3" << std::endl;
 	file << "Number of meshes: " << objects << std::endl;
 	file << "Number of triangles: " << triangles << std::endl;
 	file << "Average number of triangles per object: " << static_cast<float>(triangles)/static_cast<float>(objects) << std::endl;
@@ -263,18 +263,18 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 	file << "Average triangle count per 1 cubic metre: " << density << std::endl;
 	file << std::endl;
 	file << "Data based on triangle centroids:" << std::endl;
-	file << "Scene occupancy ratio (area of the scene containing at least one triangle): " << occupancyRatio << "%" << std::endl;
-	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even distribution): " << distribution << std::endl;
+	file << "Scene occupancy ratio (segmentscontaining at least one triangle): " << occupancyRatio << "%" << std::endl;
 	file << "Coefficient of variation: " << cv << std::endl;
-	file << "Gini coefficient of occupied cells: " << gini << std::endl;
-	file << "Gini coefficient of all cells: " << giniFull << std::endl;
+	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even distribution): " << distribution << std::endl;
+	file << "Gini coefficient of occupied cells (1 = all triangle centroids present in a single cell, 0 = triangles centroids are evenly distributed): " << gini << std::endl;
+	file << "Gini coefficient of all cells (includes empty cells in the calculation): " << giniFull << std::endl;
 	file << std::endl;
 	file << "Data based on triangle AABB dimensions:" << std::endl;
-	file << "Average triangle segments coverage: " << avgTriangleSegments << std::endl;
-	file << "Triangle AABB occupancy ratio: " << AABBoccupancyRatio << "%" << std::endl;
+	file << "Average triangle segments coverage (average number of segments a triangle covers): " << avgTriangleSegments << std::endl;
+	file << "Triangle AABB occupancy ratio (segments containing at least one triangle): " << AABBoccupancyRatio << "%" << std::endl;
 	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even distribution): " << AABBdistribution << std::endl;
-	file << "Gini coefficient of occupied cells: " << AABBgini << std::endl;
-	file << "Gini coefficient of all cells: " << AABBginiFull << std::endl;
+	file << "Gini coefficient of occupied cells (1 = all triangle centroids present in a single cell, 0 = triangles centroids are evenly distributed): " << AABBgini << std::endl;
+	file << "Gini coefficient of all cells (includes empty cells in the calculation): " << AABBginiFull << std::endl;
 	
 	file << std::endl;
 	if (reduced) {

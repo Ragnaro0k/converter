@@ -221,6 +221,9 @@ int main()
 		if (ImGui::Button("Load and render") && !paths.empty()) {
 			nFaces = 0;
 			BoundingBox tmp;
+			xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
+			float moveSpeed = 5.0f;
+			float zoomSpeed = 5.0f;
 			box = tmp;
 			meshes = importMesh(paths, renderMesh, randomSampling, box);
 			if (!meshes.empty() && !renderMesh.empty()) {
