@@ -67,19 +67,6 @@ int getAABBvector(std::vector<int>& segmentsAABB, const std::vector<Mesh>& meshe
 	return cellsCovered;
 }
 
-/*
-* 
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*
-*/
 
 void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string fname, bool reduced) {
 	std::cout << "Starting data export..." << std::endl;
@@ -263,7 +250,7 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 	file << "Average triangle count per 1 cubic metre: " << density << std::endl;
 	file << std::endl;
 	file << "Data based on triangle centroids:" << std::endl;
-	file << "Scene occupancy ratio (segmentscontaining at least one triangle): " << occupancyRatio << "%" << std::endl;
+	file << "Scene occupancy ratio (segments containing at least one triangle): " << occupancyRatio << "%" << std::endl;
 	file << "Coefficient of variation: " << cv << std::endl;
 	file << "Normalized triangle distribution (0 = high amount of clusters, 1 = even distribution): " << distribution << std::endl;
 	file << "Gini coefficient of occupied cells (1 = all triangle centroids present in a single cell, 0 = triangles centroids are evenly distributed): " << gini << std::endl;
@@ -575,6 +562,7 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 			reducedmesh.triangles[i] = reducedOffset[reducedmesh.triangles[i]];
 		}
 		if (!reducedmesh.vertices.empty()) {
+			reducedmesh.name = mesh.name;
 			reducedMeshes.push_back(reducedmesh);
 		}
 	}
@@ -589,6 +577,7 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 	}
 	int vertexOffset = 1;
 	for(auto& mesh : reducedMeshes) {
+		//std::cout << mesh.name << std::endl;
 		file << "o " << mesh.name << "\n";
 
 		for (const auto& v : mesh.vertices) {
