@@ -200,6 +200,7 @@ int main()
 	float pitch = 0.0f;
 	glm::vec2 pan(0.0f);
 	int selectedPath = -1;
+	int selectedPlayer = -1;
 	int randomSampling = 1;
 	uint32_t nFaces = 0;
 	bool stats = false;
@@ -346,6 +347,19 @@ int main()
 				playerPaths = true;
 			}
 		}
+		if (ImGui::Button("Remove selection") && selectedPlayer != -1) {
+			selectedPlayer = -1;
+		}
+		if (ImGui::Button("Export selected path") && selectedPlayer != -1) {
+			std::string savePath = saveFileTxt();
+			exportPlayer(players[selectedPlayer], box, savePath);
+		}
+		for (int i = 0; i < players.size(); i++) {
+			std::string name = players[i].name;
+			if (ImGui::Selectable(name.c_str(), selectedPlayer == i)) {
+				selectedPlayer = i;
+			}
+		}
 		ImGui::End();
 
 		box.Xminus = box.lim_Xminus + xMinWorld * (box.lim_Xplus - box.lim_Xminus);
@@ -452,10 +466,11 @@ int main()
 				false);
 			glLineWidth(1.0f);
 			for (auto& p : players) {
-
-				glBindVertexArray(p.VAO);
-				glDrawArrays(GL_LINE_STRIP, 0, p.positions.size());
-				glBindVertexArray(0);
+				if (selectedPlayer == -1 || selectedPlayer == p.id) {
+					glBindVertexArray(p.VAO);
+					glDrawArrays(GL_LINE_STRIP, 0, p.positions.size());
+					glBindVertexArray(0);
+				}
 			}
 		}
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

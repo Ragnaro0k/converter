@@ -738,6 +738,15 @@ std::vector<Player> importPlayers(const std::string& path, BoundingBox& box) {
 		}
 		p.positions = newPos;
 	}
+	std::vector<Player> newRet;
+	counter = 0;
+	for (auto& p : ret) {
+		if (!p.positions.empty()) {
+			p.id = counter;
+			newRet.push_back(p);
+			counter++;
+		}
+	}
 	/*for (auto& p : ret) {
 		std::cout << p.name << std::endl;
 		for (auto& v : p.positions) {
@@ -746,7 +755,7 @@ std::vector<Player> importPlayers(const std::string& path, BoundingBox& box) {
 		std::cout << std::endl;
 	}*/
 
-	for (auto& p : ret) {
+	for (auto& p : newRet) {
 		glGenVertexArrays(1, &p.VAO);
 		glGenBuffers(1, &p.VBO);
 
@@ -760,7 +769,18 @@ std::vector<Player> importPlayers(const std::string& path, BoundingBox& box) {
 		glBindVertexArray(0);
 	}
 
-	return ret;
+	return newRet;
 }
 
-
+void exportPlayer(const Player& player, BoundingBox& box, std::string filename) {
+	std::ofstream file(filename);
+	if (!file.is_open()) {
+		throw std::runtime_error("Cannot open file: " + filename);
+	}
+	for (auto& v : player.positions) {
+		if (isInBounds(v, box)) {
+			file << v.x << " " << v.y << " " << v.z << "\n";
+		}
+	}
+	file.close();
+}

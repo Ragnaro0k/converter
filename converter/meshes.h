@@ -19,6 +19,7 @@ struct Player {
 	glm::mat4 transform;
 	GLuint VAO;
 	GLuint VBO;
+	int id;
 };
 
 
@@ -53,5 +54,7 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats);
 
 void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats);
+
+void exportPlayer(const Player& player, BoundingBox& box, std::string path);
 
 std::vector<Player> importPlayers(const std::string& path, BoundingBox& box);
