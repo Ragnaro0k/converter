@@ -1,4 +1,5 @@
 from pxr import Usd, UsdGeom, Sdf, Gf
+import numpy as np
 '''
 method for loading geometry from a USD stage
 path: path to the .usd or .usda file to be opened
@@ -65,3 +66,43 @@ def load_meshes(paths, time=Usd.TimeCode.Default()):
         })
 
     return meshes
+
+
+def load_players(path):
+    stage = Usd.Stage.Open(path)
+
+    player_data = []
+
+    for prim in stage.Traverse():
+        name = str(prim.GetName())
+        if "player" in name:
+            player = []
+            frame = 1
+            life = 0
+            while life < 1 and frame <= 900:
+                var = prim.GetAttribute("xformOp:translate").Get(time = frame)
+                life = prim.GetAttribute("primvars:life").Get(time = frame)
+                if life is None:
+                    life = 0
+                if var is None:
+                    frame = frame + 1
+                    continue
+                else:
+                    var2 = (float(var[0]), float(var[1]), float(var[2]))
+                player.append(var2)
+                frame = frame + 1
+            player_data.append(player)
+
+    return player_data
+
+def get_players_transform(path):
+    stage = Usd.Stage.Open(path)
+
+    transform = []
+
+    for prim in stage.Traverse():
+        name = str(prim.GetName())
+        if "player" in name:
+            matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(time=1)
+            transform.append(np.array(matrix, dtype=np.float32))
+    return transform

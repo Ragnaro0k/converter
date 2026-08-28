@@ -19,7 +19,7 @@
 GLuint createShader() {
 	const char* vs = R"(
         #version 330 core
-        in vec3 position;
+        layout (location = 0) in vec3 position;
         uniform mat4 MVP;
 		uniform mat4 model;
 		out vec3 vPos;
@@ -36,36 +36,41 @@ GLuint createShader() {
 		uniform bool wireframe;
 		uniform vec3 maxBounds;
 		uniform vec3 minBounds;
+		uniform bool triangles;
 
         void main() {
 			vec3 color;
-			if(wireframe){
-				if(vPos.x > maxBounds.x || vPos.x < minBounds.x ||
-					vPos.y > maxBounds.y || vPos.y < minBounds.y ||
-					vPos.z > maxBounds.z || vPos.z < minBounds.z){
-
-					color = vec3(1.0, 0.0, 0.0);
-				}else{
-					color = vec3(1.0);
-				}
+			if(!triangles){
+				FragColor = vec4(0.0, 0.0, 1.0, 1.0);
 			}else{
-				vec3 dx = dFdx(vPos);
-				vec3 dy = dFdy(vPos);
+				if(wireframe){
+					if(vPos.x > maxBounds.x || vPos.x < minBounds.x ||
+						vPos.y > maxBounds.y || vPos.y < minBounds.y ||
+						vPos.z > maxBounds.z || vPos.z < minBounds.z){
 
-				vec3 normal = normalize(cross(dx, dy));
-				vec3 lightDir = normalize(vec3(1, 1, 1));
-				float diff = max(dot(normal, lightDir), 0.0);
-
-				if(vPos.x > maxBounds.x || vPos.x < minBounds.x ||
-					vPos.y > maxBounds.y || vPos.y < minBounds.y ||
-					vPos.z > maxBounds.z || vPos.z < minBounds.z){
-
-					color = vec3(1.0, 0.0, 0.0) * diff + vec3(0.2);
+						color = vec3(1.0, 0.0, 0.0);
+					}else{
+						color = vec3(1.0);
+					}
 				}else{
-					color = vec3(0.7) * diff + vec3(0.2);
+					vec3 dx = dFdx(vPos);
+					vec3 dy = dFdy(vPos);
+
+					vec3 normal = normalize(cross(dx, dy));
+					vec3 lightDir = normalize(vec3(1, 1, 1));
+					float diff = max(dot(normal, lightDir), 0.0);
+
+					if(vPos.x > maxBounds.x || vPos.x < minBounds.x ||
+						vPos.y > maxBounds.y || vPos.y < minBounds.y ||
+						vPos.z > maxBounds.z || vPos.z < minBounds.z){
+
+						color = vec3(1.0, 0.0, 0.0) * diff + vec3(0.2);
+					}else{
+						color = vec3(0.7) * diff + vec3(0.2);
+					}
 				}
+				FragColor = vec4(color, 1.0);
 			}
-			FragColor = vec4(color, 1.0);
 		}
     )";
 
@@ -199,6 +204,8 @@ int main()
 	uint32_t nFaces = 0;
 	bool stats = false;
 	bool statsOnly = false;
+	bool playerPaths = false;
+	std::vector<Player> players;
 
 	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
 
@@ -327,6 +334,20 @@ int main()
 
 		ImGui::End();
 
+		ImGui::Begin("Player paths");
+		if (ImGui::Button("Load players")) {
+			std::string selectedPath = openFile();
+
+			if (!selectedPath.empty()) {
+				std::string path = selectedPath;
+				players = importPlayers(path, box);
+			}
+			if (!players.empty()) {
+				playerPaths = true;
+			}
+		}
+		ImGui::End();
+
 		box.Xminus = box.lim_Xminus + xMinWorld * (box.lim_Xplus - box.lim_Xminus);
 		box.Yminus = box.lim_Yminus + yMinWorld * (box.lim_Yplus - box.lim_Yminus);
 		box.Zminus = box.lim_Zminus + zMinWorld * (box.lim_Zplus - box.lim_Zminus);
@@ -398,6 +419,9 @@ int main()
 			glUniform1i(glGetUniformLocation(shader, "wireframe"),
 				wireframe);
 
+			glUniform1i(glGetUniformLocation(shader, "triangles"),
+				true);
+
 			glUniform3f(glGetUniformLocation(shader, "maxBounds"),
 				box.Xplus, box.Yplus, box.Zplus);
 			glUniform3f(glGetUniformLocation(shader, "minBounds"),
@@ -408,7 +432,32 @@ int main()
 				glDrawElements(GL_TRIANGLES, mesh.triangles.size(), GL_UNSIGNED_INT, 0);
 			}
 		}
+		if (!players.empty()) {
+			glm::vec3 cameraPos = target - direction * distance;
+			glm::mat4 view = glm::lookAt(cameraPos, target, up);
+			glm::mat4 model = glm::mat4(1.0f);
+			glm::mat4 proj = glm::infinitePerspective(
+				glm::radians(45.0f),
+				(float)w / h,
+				0.1f
+			);
+			glm::mat4 MVP = proj * view * model;
+			glUseProgram(shader);
+			glUniformMatrix4fv(glGetUniformLocation(shader, "MVP"),
+				1, GL_FALSE, glm::value_ptr(MVP));
+			glUniformMatrix4fv(glGetUniformLocation(shader, "model"),
+				1, GL_FALSE, glm::value_ptr(model));
 
+			glUniform1i(glGetUniformLocation(shader, "triangles"),
+				false);
+			glLineWidth(1.0f);
+			for (auto& p : players) {
+
+				glBindVertexArray(p.VAO);
+				glDrawArrays(GL_LINE_STRIP, 0, p.positions.size());
+				glBindVertexArray(0);
+			}
+		}
 		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 		glfwSwapBuffers(window);

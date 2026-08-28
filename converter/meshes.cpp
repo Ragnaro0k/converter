@@ -626,5 +626,141 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, 
 	std::cout << "Exported scene to " << filename << std::endl;
 }
 
+void ApplyTransformPlayers(std::vector<Player>& players) {
+	for (auto& p : players) {
+		for (auto& pos : p.positions) {
+			glm::vec4 tmp = p.transform * glm::vec4(pos, 1.0f);
+			pos = glm::vec3(tmp);
+		}
+	}
+
+}
+
+void RotatePlayers(std::vector<Player>& players) {
+	glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
+	glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
+	for (auto& p : players) {
+		for (auto& pos : p.positions) {
+			glm::vec4 transform = rotation * glm::vec4(pos, 1.0f);
+			transform = scale * transform;
+			pos = glm::vec3(transform);
+		}
+	}
+	return;
+}
+
+void FilterPositions(Player& player, BoundingBox& box) {
+	std::vector<glm::vec3> newPositions;
+	for (auto& pos : player.positions) {
+		if (isInBounds(pos, box)) newPositions.push_back(pos);
+	}
+	player.positions = newPositions;
+}
+
+std::vector<Player> importPlayers(const std::string& path, BoundingBox& box) {
+	std::cout << "importPlayers called" << std::endl;
+	std::vector<Player> ret;
+	py::object pyPlayers;
+	pybind11::str paths = path;
+	std::cout << "Calling python..." << std::endl;
+	py::module loader = py::module::import("usd_loader"); try
+	{
+		pyPlayers = loader.attr("load_players")(paths);
+
+		std::cout << "Python returned" << std::endl;
+	}
+	catch (const py::error_already_set& e)
+	{
+		std::cerr << "Python exception:\n"
+			<< e.what()
+			<< std::endl;
+	}
+	std::cout << "Processing data" << std::endl;
+	py::list players = pyPlayers.cast<py::list>();
+	int counter = 0;
+	for (auto& player : players) {
+		//std::cout << "Ch1" << std::endl;
+		py::list positions = player.cast<py::list>();
+		Player tmp;
+		tmp.name = "player_" + std::to_string(counter);
+		for (auto& position : positions) {
+			//std::cout << "Ch2" << std::endl;
+			py::tuple p = position.cast<py::tuple>();
+			glm::vec3 v;
+			v.x = p[0].cast<float>();
+			v.y = p[1].cast<float>();
+			v.z = p[2].cast<float>();
+			tmp.positions.push_back(v);
+		}
+		ret.push_back(tmp);
+		counter++;
+
+	}
+
+	py::object pyTransform;
+	std::cout << "Calling python..." << std::endl;
+	py::module loaderTr = py::module::import("usd_loader"); try
+	{
+		pyTransform = loaderTr.attr("get_players_transform")(paths);
+
+		std::cout << "Python returned" << std::endl;
+	}
+	catch (const py::error_already_set& e)
+	{
+		std::cerr << "Python exception:\n"
+			<< e.what()
+			<< std::endl;
+	}
+	std::cout << "Processing data" << std::endl;
+
+	counter = 0;
+	py::list transform = pyTransform.cast<py::list>();
+	for (auto& t : transform) {
+		py::array_t<float> matrix = t.cast<py::array_t<float>>();
+		auto mbuf = matrix.request();
+
+		float* mdata = static_cast<float*>(mbuf.ptr);
+
+		ret[counter].transform = glm::make_mat4(mdata);
+		/*for (int i = 0; i < 4; i++) {
+			std::cout << ret[counter].transform[i][0] << " " << ret[counter].transform[i][1] << " " << ret[counter].transform[i][2] << " " << ret[counter].transform[i][3] << std::endl;
+		}
+		std::cout << std::endl;*/
+		counter++;
+	}
+
+	//ApplyTransformPlayers(ret);
+	RotatePlayers(ret);
+	for (auto& p : ret) {
+		std::vector<glm::vec3> newPos;
+		for (auto& v : p.positions) {
+			if (isInBounds(v, box)) newPos.push_back(v);
+		}
+		p.positions = newPos;
+	}
+	/*for (auto& p : ret) {
+		std::cout << p.name << std::endl;
+		for (auto& v : p.positions) {
+			std::cout << v.x << " " << v.y << " " << v.z << std::endl;
+		}
+		std::cout << std::endl;
+	}*/
+
+	for (auto& p : ret) {
+		glGenVertexArrays(1, &p.VAO);
+		glGenBuffers(1, &p.VBO);
+
+		glBindVertexArray(p.VAO);
+
+		glBindBuffer(GL_ARRAY_BUFFER, p.VBO);
+		glBufferData(GL_ARRAY_BUFFER, p.positions.size() * sizeof(glm::vec3), p.positions.data(), GL_STATIC_DRAW);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+
+		glEnableVertexAttribArray(0);
+		glBindVertexArray(0);
+	}
+
+	return ret;
+}
 
 

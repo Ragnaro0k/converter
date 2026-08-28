@@ -13,6 +13,14 @@ struct Mesh {
 	std::string name;
 };
 
+struct Player {
+	std::string name;
+	std::vector<glm::vec3> positions;
+	glm::mat4 transform;
+	GLuint VAO;
+	GLuint VBO;
+};
+
 
 struct RenderMesh {
 	std::vector<glm::vec3> vertices;
@@ -45,3 +53,5 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats);
 
 void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats);
+
+std::vector<Player> importPlayers(const std::string& path, BoundingBox& box);
