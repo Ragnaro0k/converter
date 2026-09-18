@@ -58,3 +58,6 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 void exportPlayer(const Player& player, BoundingBox& box, std::string path);
 
 std::vector<Player> importPlayers(const std::string& path, BoundingBox& box);
+
+void exportCamera(const std::vector<glm::vec3>& points, std::string filename);
+

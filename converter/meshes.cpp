@@ -784,3 +784,14 @@ void exportPlayer(const Player& player, BoundingBox& box, std::string filename) 
 	}
 	file.close();
 }
+
+void exportCamera(const std::vector<glm::vec3> &points, std::string filename) {
+	std::ofstream file(filename);
+	if (!file.is_open()) {
+		throw std::runtime_error("Cannot open file: " + filename);
+	}
+	for (auto& v : points) {
+		file << v.x << " " << v.y << " " << v.z << "\n";
+	}
+	file.close();
+}

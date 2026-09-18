@@ -206,7 +206,10 @@ int main()
 	bool stats = false;
 	bool statsOnly = false;
 	bool playerPaths = false;
+	bool showPlayers = true;
 	std::vector<Player> players;
+	std::vector<glm::vec3> cameraPoints;
+	int selectedCamPos = -1;
 
 	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
 
@@ -335,7 +338,10 @@ int main()
 
 		ImGui::End();
 
+		ImGui::SetNextWindowPos(ImVec2(1770.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(150 / 1920.0f * display.x, (1080.0f-450.0f) / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Player paths");
+		ImGui::Checkbox("Show Paths", &showPlayers);
 		if (ImGui::Button("Load players")) {
 			std::string selectedPath = openFile();
 
@@ -352,7 +358,8 @@ int main()
 		}
 		if (ImGui::Button("Export selected path") && selectedPlayer != -1) {
 			std::string savePath = saveFileTxt();
-			exportPlayer(players[selectedPlayer], box, savePath);
+			if(!savePath.empty())
+				exportPlayer(players[selectedPlayer], box, savePath);
 		}
 		for (int i = 0; i < players.size(); i++) {
 			std::string name = players[i].name;
@@ -361,6 +368,70 @@ int main()
 			}
 		}
 		ImGui::End();
+
+
+		ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(250.0f / 1920.0f * display.x, (1080.0f - 450.0f) / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::Begin("Camera Path");
+
+		if (ImGui::Button("Import from selected player") && selectedPlayer != -1) {
+			cameraPoints = players[selectedPlayer].positions;
+		}
+
+		if (ImGui::Button("Remove point") && selectedCamPos != -1) {
+			cameraPoints.erase(cameraPoints.begin() + selectedCamPos);
+			selectedCamPos = -1;
+		}
+
+		if (ImGui::Button("Add point before") && selectedCamPos != -1) {
+			glm::vec3 newPos = glm::vec3(0.0f);
+			if (selectedCamPos == 0) {
+				cameraPoints.push_back(newPos);
+			}
+			else {
+				cameraPoints.emplace(cameraPoints.begin() + selectedCamPos, newPos);
+			}
+
+		}
+
+		if (ImGui::Button("Add point after") && selectedCamPos != -1) {
+			glm::vec3 newPos = glm::vec3(0.0f);
+			cameraPoints.emplace(cameraPoints.begin() + selectedCamPos+1, newPos);
+		}
+		if (ImGui::Button("Export camera") && cameraPoints.size() > 0) {
+			std::string savePath = saveFileTxt();
+			if (!savePath.empty()) exportCamera(cameraPoints, savePath);
+		}
+		int pointCounter = 0;
+		for (int i = 0; i < cameraPoints.size(); i++) {
+			std::string p = "point " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints[i].x) + " " + std::to_string(cameraPoints[i].y) + " " + std::to_string(cameraPoints[i].z);
+			if (ImGui::Selectable(p.c_str(), selectedCamPos == i)) {
+				selectedCamPos = i;
+			}
+			pointCounter++;
+		}
+
+		ImGui::End();
+
+		ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::Begin("Point Editor");
+
+		float x = selectedCamPos == -1 ? 0 : cameraPoints[selectedCamPos].x;
+		float y = selectedCamPos == -1 ? 0 : cameraPoints[selectedCamPos].y;
+		float z = selectedCamPos == -1 ? 0 : cameraPoints[selectedCamPos].z;
+		
+		ImGui::InputFloat("X: ", &x);
+		ImGui::InputFloat("Y: ", &y);
+		ImGui::InputFloat("Z: ", &z);
+
+		if (selectedCamPos > -1) {
+			cameraPoints[selectedCamPos].x = x;
+			cameraPoints[selectedCamPos].y = y;
+			cameraPoints[selectedCamPos].z = z;
+		}
+		ImGui::End();
+
 
 		box.Xminus = box.lim_Xminus + xMinWorld * (box.lim_Xplus - box.lim_Xminus);
 		box.Yminus = box.lim_Yminus + yMinWorld * (box.lim_Yplus - box.lim_Yminus);
@@ -446,7 +517,7 @@ int main()
 				glDrawElements(GL_TRIANGLES, mesh.triangles.size(), GL_UNSIGNED_INT, 0);
 			}
 		}
-		if (!players.empty()) {
+		if (!players.empty() && showPlayers) {
 			glm::vec3 cameraPos = target - direction * distance;
 			glm::mat4 view = glm::lookAt(cameraPos, target, up);
 			glm::mat4 model = glm::mat4(1.0f);
