@@ -1,6 +1,6 @@
 ﻿
 find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
-add_executable(converter "converter.cpp" "converter.h" "meshes.cpp" "meshes.h")
+add_executable(converter "converter.cpp" "converter.h" "meshes.cpp" "meshes.h" "camera.cpp" "camera.h")
 
 add_custom_command(TARGET converter POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

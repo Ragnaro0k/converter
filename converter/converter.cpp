@@ -3,6 +3,7 @@
 #include "converter.h"
 #include <glad/glad.h>
 #include "meshes.h"
+#include "camera.h"
 #include <iostream>
 #include <GLFW/glfw3.h>
 #include <string>
@@ -19,6 +20,12 @@
 
 
 using clockupdate = std::chrono::steady_clock;
+
+enum CamState {
+	STATIONARY,
+	POLY,
+	CURVE
+};
 
 GLuint createShader() {
 	const char* vs = R"(
@@ -221,9 +228,8 @@ int main()
 	bool playerPaths = false;
 	bool showPlayers = true;
 	std::vector<Player> players;
-	std::vector<glm::vec3> cameraPoints;
+	Camera cameraPoints;
 	int selectedCamPos = -1;
-	bool cameraMoving = false;
 	auto lastUpdate = clockupdate::now();
 	int nextPoint = -1;
 	float timeDelta = -1;
@@ -235,6 +241,10 @@ int main()
 	glm::vec3 direction;
 	glm::vec3 target = glm::vec3(0.0f);
 	glm::vec3 up;
+	enum CamState cameraState = STATIONARY;
+	bool curves = false;
+	std::vector<ArcLengthTable> pathLUT;
+	glm::vec3 lastPos;
 
 	BoundingBox box;
 	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
@@ -405,10 +415,15 @@ int main()
 		ImGui::Begin("Camera Path");
 
 		ImGui::Checkbox("Show path", &showCamera);
+		ImGui::SameLine();
+		ImGui::Checkbox("Curves path", &curves);
 		if (ImGui::Button("Import from selected player") && selectedPlayer != -1) {
-			cameraPoints = players[selectedPlayer].positions;
-			for (auto& p : cameraPoints) {
+			cameraPoints.positions = players[selectedPlayer].positions;
+			cameraPoints.origSize = cameraPoints.positions.size();
+			cameraPoints.original = std::vector<bool>(cameraPoints.positions.size(), true);
+			for (auto& p : cameraPoints.positions) {
 				p += glm::vec3(0.0f, 1.5f, 0.0f);
+				
 			}
 			glGenVertexArrays(1, &camVAO);
 			glGenBuffers(1, &camVBO);
@@ -416,7 +431,7 @@ int main()
 			glBindVertexArray(camVAO);
 
 			glBindBuffer(GL_ARRAY_BUFFER, camVBO);
-			glBufferData(GL_ARRAY_BUFFER, cameraPoints.size() * sizeof(glm::vec3), cameraPoints.data(), GL_DYNAMIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, cameraPoints.positions.size() * sizeof(glm::vec3), cameraPoints.positions.data(), GL_DYNAMIC_DRAW);
 			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
 
 			glEnableVertexAttribArray(0);
@@ -430,53 +445,68 @@ int main()
 		ImGui::SameLine();
 
 		if (ImGui::Button("Remove point") && selectedCamPos != -1) {
-			cameraPoints.erase(cameraPoints.begin() + selectedCamPos);
+			cameraPoints.positions.erase(cameraPoints.positions.begin() + selectedCamPos);
+			cameraPoints.original.erase(cameraPoints.original.begin() + selectedCamPos);
+			cameraPoints.origSize--;
 		}
 
 		if (ImGui::Button("Add point before") && selectedCamPos != -1) {
 			glm::vec3 newPos = glm::vec3(0.0f);
 			if (selectedCamPos == 0) {
 				newPos.x -= 1.0f;
+				
 			}
 			else {
-				newPos = cameraPoints[selectedCamPos - 1] + 0.5f * (cameraPoints[selectedCamPos] - cameraPoints[selectedCamPos - 1]);
+				newPos = cameraPoints.positions[selectedCamPos - 1] + 0.5f * (cameraPoints.positions[selectedCamPos] - cameraPoints.positions[selectedCamPos - 1]);
 			}
-			cameraPoints.emplace(cameraPoints.begin() + selectedCamPos, newPos);
+			cameraPoints.positions.emplace(cameraPoints.positions.begin() + selectedCamPos, newPos);
+			cameraPoints.original.emplace(cameraPoints.original.begin() + selectedCamPos, false);
 
 		}
 
 		ImGui::SameLine();
 		if (ImGui::Button("Add point after") && selectedCamPos != -1) {
 			glm::vec3 newPos = glm::vec3(0.0f);
-			if (selectedCamPos == cameraPoints.size()) {
+			if (selectedCamPos == cameraPoints.positions.size()) {
 				newPos.x += 1.0f;
 			}
 			else {
-				newPos = cameraPoints[selectedCamPos] + 0.5f * (cameraPoints[selectedCamPos + 1] - cameraPoints[selectedCamPos]);
+				newPos = cameraPoints.positions[selectedCamPos] + 0.5f * (cameraPoints.positions[selectedCamPos + 1] - cameraPoints.positions[selectedCamPos]);
 			}
-			cameraPoints.emplace(cameraPoints.begin() + selectedCamPos+1, newPos);
+			cameraPoints.positions.emplace(cameraPoints.positions.begin() + selectedCamPos+1, newPos);
+			cameraPoints.original.emplace(cameraPoints.original.begin() + selectedCamPos + 1, false);
 		}
-		if (ImGui::Button("Export camera") && cameraPoints.size() > 0) {
+		if (ImGui::Button("Export camera") && cameraPoints.positions.size() > 0) {
 			std::string savePath = saveFileTxt();
-			if (!savePath.empty()) exportCamera(cameraPoints, savePath);
+			if (!savePath.empty()) exportCamera(cameraPoints.positions, savePath);
 		}
 
 		ImGui::SameLine();
-		if (ImGui::Button("Move camera") && !cameraMoving && cameraPoints.size() > 0) {
-			cameraMoving = true;
-			lastUpdate = clockupdate::now();
-			nextPoint = selectedCamPos > 0 ? selectedCamPos + 1 : 1;
+		if (ImGui::Button("Move camera") && cameraState == STATIONARY && cameraPoints.positions.size() > 0) {
+			cameraState = curves ? CURVE : POLY;
+			pathLUT = GetCameraPath(cameraPoints, cameraState == CURVE ? true : false);
+			nextPoint = selectedCamPos > 0 ? selectedCamPos : 0;
 			timeDelta = 0;
+			std::cout << "LUT has " << pathLUT.size() << " segments" << std::endl;
+			lastUpdate = clockupdate::now();
+			lastPos = cameraPoints.positions[nextPoint];
 		}
 		ImGui::SameLine();
-		if (ImGui::Button("Cancel movement") && cameraMoving) {
-			cameraMoving = false;
+		if (ImGui::Button("Cancel movement") && cameraState != STATIONARY) {
+			cameraState = STATIONARY;
 		}
 		ImGui::Separator();
 		ImGui::BeginChild("Camera points", ImVec2(0, 0), ImGuiChildFlags_Borders);
 		int pointCounter = 0;
-		for (int i = 0; i < cameraPoints.size(); i++) {
-			std::string p = "point " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints[i].x) + " " + std::to_string(cameraPoints[i].y) + " " + std::to_string(cameraPoints[i].z);
+		for (int i = 0; i < cameraPoints.positions.size(); i++) {
+			std::string p;
+			if (cameraPoints.original[i]) {
+				p = "point " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints.positions[i].x) + " " + std::to_string(cameraPoints.positions[i].y) + " " + std::to_string(cameraPoints.positions[i].z);
+			}
+			else {
+				p = "point new " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints.positions[i].x) + " " + std::to_string(cameraPoints.positions[i].y) + " " + std::to_string(cameraPoints.positions[i].z);
+			}
+			
 			if (ImGui::Selectable(p.c_str(), selectedCamPos == i)) {
 				selectedCamPos = i;
 			}
@@ -489,9 +519,9 @@ int main()
 		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Point Editor");
 
-		float x = selectedCamPos == -1 ? 0 : cameraPoints[selectedCamPos].x;
-		float y = selectedCamPos == -1 ? 0 : cameraPoints[selectedCamPos].y;
-		float z = selectedCamPos == -1 ? 0 : cameraPoints[selectedCamPos].z;
+		float x = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].x;
+		float y = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].y;
+		float z = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].z;
 		
 		ImGui::InputFloat("X  ", &x);
 		ImGui::SameLine();
@@ -523,9 +553,9 @@ int main()
 		}
 
 		if (selectedCamPos > -1) {
-			cameraPoints[selectedCamPos].x = x;
-			cameraPoints[selectedCamPos].y = y;
-			cameraPoints[selectedCamPos].z = z;
+			cameraPoints.positions[selectedCamPos].x = x;
+			cameraPoints.positions[selectedCamPos].y = y;
+			cameraPoints.positions[selectedCamPos].z = z;
 		}
 		ImGui::End();
 
@@ -538,7 +568,7 @@ int main()
 		box.Yplus = box.Yminus + yMaxWorld * (box.lim_Yplus - box.lim_Yminus);
 		box.Zplus = box.Zminus + zMaxWorld * (box.lim_Zplus - box.lim_Zminus);
 
-		if (!cameraMoving) {
+		if (cameraState == STATIONARY) {
 			direction.x = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
 			direction.y = sin(glm::radians(pitch));
 			direction.z = cos(glm::radians(pitch)) * cos(glm::radians(yaw));
@@ -582,17 +612,20 @@ int main()
 		if (!meshes.empty()) {
 			glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
 
-			if (cameraMoving) {
+			if (cameraState != STATIONARY) {
 				timeDelta += GetTimeDelta(lastUpdate, 1.0f);
+				//std::cout << timeDelta << std::endl;
 				if (timeDelta >= 1.0f) {
-					if (nextPoint + 1 >= cameraPoints.size()) {
-						cameraMoving = false;
-					}
-					else {
-						while (timeDelta >= 1.0f) {
-							timeDelta -= 1.0f;
-						}
+					while (timeDelta >= 1.0f) {
+						timeDelta -= 1.0f;
 						nextPoint++;
+						//std::cout << "Entering segment " << nextPoint << std::endl;
+					}
+
+					if (nextPoint >= static_cast<int>(pathLUT.size())) {
+						cameraState = STATIONARY;
+						nextPoint = static_cast<int>(pathLUT.size()) - 1;
+						timeDelta = 0.0f;
 					}
 				}
 			}
@@ -601,8 +634,10 @@ int main()
 			glm::mat4 view;
 			glm::mat4 model;
 			glm::mat4 proj;
-
-			if (!cameraMoving) {
+			glm::vec3 targetTMP;
+			switch (cameraState)
+			{
+			case STATIONARY:
 				cameraPos = target - direction * distance;
 				view = glm::lookAt(cameraPos, target, up);
 				model = glm::mat4(1.0f);
@@ -611,21 +646,66 @@ int main()
 					(float)w / h,
 					0.1f
 				);
-			}
-			else {
-				cameraPos = cameraPoints[nextPoint - 1] + timeDelta * (cameraPoints[nextPoint] - cameraPoints[nextPoint - 1]);
-				//cameraPos += glm::vec3(0.0f, 1.0f, 0.0f);
-				glm::vec3 targetTMP = nextPoint + 1 == cameraPoints.size() ? cameraPoints[nextPoint] : cameraPoints[nextPoint] + (cameraPoints[nextPoint + 1] - cameraPoints[nextPoint]) * timeDelta;
-				//targetTMP += glm::vec3(0.0f, 1.0f, 0.0f);
-				view = glm::lookAt(cameraPos, 
-					targetTMP, 
+				break;
+			case POLY:
+				cameraPos = EvaluateArcLength(pathLUT[nextPoint].samples, timeDelta, pathLUT[nextPoint].normalizedDistance);
+
+				if (nextPoint >= 0) {
+					const auto& previousPath = pathLUT[nextPoint];
+
+					if (!previousPath.samples.empty()) {
+						glm::vec3 previousEnd = previousPath.samples[0];
+
+						targetTMP = cameraPos - (previousEnd - cameraPos);
+					}
+					else {
+						targetTMP = cameraPos + glm::vec3(0.0f, 0.0f, -1.0f);
+					}
+				}
+				else {
+					// No previous path exists.
+					std::cout << "No path!" << std::endl;
+					targetTMP =
+						cameraPos + glm::vec3(0.0f, 0.0f, -1.0f);
+				}
+
+				view = glm::lookAt(
+					cameraPos,
+					targetTMP,
 					glm::vec3(0.0f, 1.0f, 0.0f));
+
 				model = glm::mat4(1.0f);
+
 				proj = glm::infinitePerspective(
 					glm::radians(45.0f),
-					(float)w / h,
+					static_cast<float>(w) / h,
 					0.1f
 				);
+
+				break;
+			case CURVE:
+				cameraPos = EvaluateArcLength(pathLUT[nextPoint].samples, timeDelta, pathLUT[nextPoint].normalizedDistance);
+				targetTMP = cameraPos + glm::vec3(1.0f, 0.0f, 0.0f);
+				//targetTMP = glm::normalize(cameraPos - lastPos) + cameraPos;
+				//std::cout << "Camera: " << cameraPos.x << " " << cameraPos.y << " " << cameraPos.z << std::endl;
+				//std::cout << "Tangent: " << targetTMP.x << " " << targetTMP.y << " " << targetTMP.z << std::endl;
+				view = glm::lookAt(
+					cameraPos,
+					targetTMP,
+					glm::vec3(0.0f, 1.0f, 0.0f));
+
+				model = glm::mat4(1.0f);
+
+				proj = glm::infinitePerspective(
+					glm::radians(45.0f),
+					static_cast<float>(w) / h,
+					0.1f
+				);
+				lastPos = cameraPos;
+				break;
+			default:
+				std::cout << "ERROR: Undefined camera state!" << std::endl;
+				break;
 			}
 			glm::mat4 MVP = proj * view * model;
 			glUseProgram(shader);
@@ -649,7 +729,7 @@ int main()
 				glDrawElements(GL_TRIANGLES, mesh.triangles.size(), GL_UNSIGNED_INT, 0);
 			}
 		}
-		if (!players.empty() && showPlayers && !cameraMoving) {
+		if (!players.empty() && showPlayers && cameraState == STATIONARY) {
 			glm::vec3 cameraPos = target - direction * distance;
 			glm::mat4 view = glm::lookAt(cameraPos, target, up);
 			glm::mat4 model = glm::mat4(1.0f);
@@ -676,9 +756,9 @@ int main()
 				}
 			}
 		}
-		if (showCamera && !cameraPoints.empty() && !cameraMoving) {
+		if (showCamera && !cameraPoints.positions.empty() && cameraState == STATIONARY) {
 			glBindBuffer(GL_ARRAY_BUFFER, camVBO);
-			glBufferData(GL_ARRAY_BUFFER, cameraPoints.size() * sizeof(glm::vec3), cameraPoints.data(), GL_DYNAMIC_DRAW);
+			glBufferData(GL_ARRAY_BUFFER, cameraPoints.positions.size() * sizeof(glm::vec3), cameraPoints.positions.data(), GL_DYNAMIC_DRAW);
 			glm::vec3 cameraPos = target - direction * distance;
 			glm::mat4 view = glm::lookAt(cameraPos, target, up);
 			glm::mat4 model = glm::mat4(1.0f);
@@ -698,7 +778,7 @@ int main()
 				false);
 			glLineWidth(1.0f);
 			glBindVertexArray(camVAO);
-			glDrawArrays(GL_LINE_STRIP, 0, cameraPoints.size());
+			glDrawArrays(GL_LINE_STRIP, 0, cameraPoints.positions.size());
 
 			if (selectedCamPos > -1) {
 				glPointSize(6.0f);
