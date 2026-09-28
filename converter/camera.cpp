@@ -6,6 +6,14 @@
 #include <vector>
 #include <iostream>
 
+/**
+* Calculates tangent to a point on the path
+* 
+* @param points Sequence of control points on the path
+* @param segment Index of the first first control point
+* @param t Normalized time
+* @return Non-normalized tangent to the point on the curve
+*/
 glm::vec3 CatmullRomTangent(const std::vector<glm::vec3>& points, int segment, float t) {
     int n = static_cast<int>(points.size());
 
@@ -25,6 +33,14 @@ glm::vec3 CatmullRomTangent(const std::vector<glm::vec3>& points, int segment, f
     return 0.5f * ((-p0 + p2) + 2.0f * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t + 3.0f * (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t2);
 }
 
+/**
+* Calculates a position on the path according to Catmull-rom curve
+* 
+* @param points Sequence of control points on the path
+* @param segment Index of the first first control point
+* @param t Normalized time
+* @return Position on the curve
+*/
 glm::vec3 CatmullRomSegment(const std::vector<glm::vec3>& points, int segment, float t){
 	int n = static_cast<int>(points.size());
 
@@ -56,6 +72,14 @@ glm::vec3 LineSegment(const std::vector<glm::vec3>& points, int segment, float t
     return (1 - t) * p1 + t * p2;
 }
 
+/**
+* Construct a lookup table for camera path
+* 
+* @param points Control points on the path
+* @param curves Switch between Catmull Rom curve and straightline path variant
+* @param samplesPerSegment Number of samples per segment
+* @return Lookup table for the path segment
+*/
 ArcLengthTable BuildArcLengthTable(const std::vector<glm::vec3>& points, bool curves, int samplesPerSegment = 100){
     ArcLengthTable table;
 
@@ -205,8 +229,4 @@ std::vector<ArcLengthTable> GetPathLines(Camera &camera) {
         ret.push_back(BuildArcLengthTable(points, false));
 	}
     return ret;
-}
-
-std::vector<ArcLengthTable> GetCameraPath(Camera &camera, bool useCurves) {
-	return useCurves ? GetPathCurves(camera) : GetPathLines(camera);
 }

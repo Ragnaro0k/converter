@@ -11,10 +11,14 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
 
+/** Maximum number of triangles per buffer */
 const size_t MAX_TRIANGLES = 1'000'000;
 
 namespace py = pybind11;
 
+/**
+* Auxiliary container for mesh processing
+*/
 struct RawMesh {
 	std::vector<glm::vec3> vertices;
 	std::vector<uint32_t> indices;
@@ -23,7 +27,9 @@ struct RawMesh {
 	float mpu;
 	glm::mat4 transform;
 };
-
+/**
+* @return Total sum of cells covered by triangles 
+*/
 int getAABBvector(std::vector<int>& segmentsAABB, const std::vector<Mesh>& meshes, BoundingBox& box,
 					float xStep, float yStep, float zStep, const int segmentsRow) {
 
@@ -68,7 +74,7 @@ int getAABBvector(std::vector<int>& segmentsAABB, const std::vector<Mesh>& meshe
 }
 
 
-void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string fname, bool reduced) {
+void exportStats(const std::vector<Mesh>& meshes, std::string fname, bool reduced, BoundingBox& box) {
 	std::cout << "Starting data export..." << std::endl;
 	int segmentsRow = 128;
 	int triangles = 0;
@@ -282,6 +288,9 @@ void exportStats(const std::vector<Mesh>& meshes, BoundingBox& box, std::string 
 
 }
 
+/**
+* Import meshes from .usd/.usda files
+*/
 std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 	std::cout << "Starting python loader..." << std::endl;
 	std::vector<RawMesh> result;
@@ -350,6 +359,7 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 	return result;
 }
 
+
 void applyTransform(RawMesh& mesh) {
 	for (auto& v : mesh.vertices) {
 		glm::vec4 tmp = mesh.transform * glm::vec4(v, 1.0f);
@@ -357,6 +367,9 @@ void applyTransform(RawMesh& mesh) {
 	}
 }
 
+/**
+* Convert quads and polygons with more than 3 sides into triangles
+*/
 std::vector<uint32_t> triangulate(const RawMesh& mesh, int randSampl) {
 	std::vector<uint32_t> triangles;
 	std::vector<uint32_t> ret;
@@ -400,6 +413,9 @@ std::vector<uint32_t> triangulate(const RawMesh& mesh, int randSampl) {
 	return ret;
 }
 
+/**
+* Mesh orientation fix
+*/
 void rotateMesh(Mesh& mesh) {
 	glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
 	glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
@@ -532,7 +548,7 @@ bool isInBounds(glm::vec3 vertex, BoundingBox& box) {
 	return true;
 }
 
-void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats) {
+void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box) {
 	std::vector<Mesh> reducedMeshes;
 
 	for (auto& mesh : meshes) {
@@ -566,10 +582,6 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 			reducedMeshes.push_back(reducedmesh);
 		}
 	}
-	if (stats) {
-		exportStats(reducedMeshes, box, filename, true);
-		return;
-	}
 
 	std::ofstream file(filename);
 	if (!file.is_open()) {
@@ -594,11 +606,7 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 	std::cout << "Exported reduced scene to " << filename << std::endl;
 }
 
-void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool stats) {
-	if (stats) {
-		exportStats(meshes, box, filename, false);
-		return;
-	}
+void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename) {
 
 	std::ofstream file(filename);
 	if (!file.is_open()) {
@@ -626,16 +634,10 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, 
 	std::cout << "Exported scene to " << filename << std::endl;
 }
 
-void ApplyTransformPlayers(std::vector<Player>& players) {
-	for (auto& p : players) {
-		for (auto& pos : p.positions) {
-			glm::vec4 tmp = p.transform * glm::vec4(pos, 1.0f);
-			pos = glm::vec3(tmp);
-		}
-	}
 
-}
-
+/**
+* Player paths orientation fix
+*/
 void RotatePlayers(std::vector<Player>& players) {
 	glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(-1.0f, 0.0f, 0.0f));
 	glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(0.025f));
@@ -649,6 +651,9 @@ void RotatePlayers(std::vector<Player>& players) {
 	return;
 }
 
+/**
+* Scrap positions not passing through the scene
+*/
 void FilterPositions(Player& player, BoundingBox& box) {
 	std::vector<glm::vec3> newPositions;
 	for (auto& pos : player.positions) {

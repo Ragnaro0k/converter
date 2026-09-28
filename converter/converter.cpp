@@ -206,48 +206,55 @@ int main()
 
 	GLuint shader = createShader();
 
-	std::vector<std::string> paths;
 	
+	// UI interactions
+	std::vector<std::string> paths; // list of paths of scenes included to be imported
+	float moveSpeed = 5.0f; // pan movement speed modifier
+	float zoomSpeed = 5.0f; // zoom speed modifier
+	bool wireframe = false; // wireframe rendering option switch
+	int selectedPath = -1; // selected path to .usd scene
+	int selectedPlayer = -1; // selected player path from the list
+	int randomSampling = 1; // random sampling option variable
+	uint32_t nFaces = 0; // total number of triangles counter
+	bool showPlayers = true; // switch for player paths rendering
+	int selectedCamPos = -1; // selected camera position (glm::vec3) on its path
+	bool showCamera = true; // switch whether camera path should be rendered
+	bool curves = false; // switch between staight lines and curvy camera movement
+	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1; // variables for the bounding box manipulation
 
-	std::vector<Mesh> meshes;
-	std::vector<RenderMesh> renderMesh;
-	float rotX = 0.0f, rotY = 0.0f;
-	float moveSpeed = 5.0f;
-	float zoomSpeed = 5.0f;
-	bool wireframe = false;
-	float distance = 5.0f;
-	float yaw = 0.0f;
-	float pitch = 0.0f;
-	glm::vec2 pan(0.0f);
-	int selectedPath = -1;
-	int selectedPlayer = -1;
-	int randomSampling = 1;
-	uint32_t nFaces = 0;
-	bool stats = false;
-	bool statsOnly = false;
-	bool playerPaths = false;
-	bool showPlayers = true;
-	std::vector<Player> players;
-	Camera cameraPoints;
-	int selectedCamPos = -1;
-	auto lastUpdate = clockupdate::now();
-	int nextPoint = -1;
-	float timeDelta = -1;
-	bool showCamera = true;
+
+	// rendering data
+	std::vector<RenderMesh> renderMesh; //contains rendering meshes
+	std::vector<Player> players; // list of all player paths
+	Camera cameraPoints; // list of all camera points (extracted from selected player)
+	std::vector<Mesh> meshes; //contains export meshes
+	BoundingBox box;
+
+	// camera variables
 	GLuint camVAO;
 	GLuint camVBO;
 	GLuint pointVAO;
-	GLuint pointVBO;
+	GLuint pointVBO; // buffers for camera showing
 	glm::vec3 direction;
 	glm::vec3 target = glm::vec3(0.0f);
-	glm::vec3 up;
-	enum CamState cameraState = STATIONARY;
-	bool curves = false;
-	std::vector<ArcLengthTable> pathLUT;
-	glm::vec3 lastPos;
+	glm::vec3 up; // vectors for camera setup
 
-	BoundingBox box;
-	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
+	// camera walkthrough movement variables
+	auto lastUpdate = clockupdate::now(); // real time delta for movement
+	int nextPoint = -1; // next anchor point for camera movement
+	float timeDelta = -1; // last update delta for movement
+	enum CamState cameraState = STATIONARY; // camera mode switch
+	std::vector<ArcLengthTable> pathLUT; // // experimental camera movement implementation
+	glm::vec3 lastPos; // last position of the moving camera
+
+
+	// mouse movement variables
+	float rotX = 0.0f, rotY = 0.0f; // camera variables
+	float distance = 5.0f; // camera movement variable
+	float yaw = 0.0f; // camera rotation variable
+	float pitch = 0.0f; // camera rotation variable
+	glm::vec2 pan(0.0f); // camera rotation variable
+
 
 	while (!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
@@ -256,15 +263,41 @@ int main()
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 		ImVec2 display = ImGui::GetIO().DisplaySize;
+
+		// window 1 setup - general info and movement adjustments
 		ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(500.0f / 1920.0f * display.x, 220.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(500.0f / 1920.0f * display.x, 110.0f / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Converter Tools");
 		ImGui::Checkbox("Wireframe", &wireframe);
+		ImGui::SameLine();
 		ImGui::Text("Number of faces: %d", nFaces);
 		ImGui::SliderFloat("Move speed", &moveSpeed, 1.0f, 100.0f);
 		ImGui::SliderFloat("Zoom speed", &zoomSpeed, 1.0f, 100.0f);
 		ImGui::SliderInt("Random Sampling", &randomSampling, 1, 10);
 		ImGui::Text("Drag mouse to rotate");
+
+		ImGui::End();
+
+		// window 2 setup - scene paths management and import
+		ImGui::SetNextWindowPos(ImVec2(0, 110.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(300.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::Begin("Paths management");
+
+		if (ImGui::Button("Add path")) {
+			std::string selectedPath = openFile();
+
+			if (!selectedPath.empty()) {
+				std::string path = selectedPath;
+				std::cout << "Selected: " << path << std::endl;
+				paths.push_back(path);
+			}
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Remove path") && selectedPath != -1) {
+			paths.erase(paths.begin() + selectedPath);
+			selectedPath = -1;
+		}
+		ImGui::SameLine();
 		if (ImGui::Button("Load and render") && !paths.empty()) {
 			nFaces = 0;
 			BoundingBox tmp;
@@ -290,30 +323,10 @@ int main()
 			std::cout << "+Z: " << box.Zplus << std::endl;
 			std::cout << "-Z: " << box.Zminus << std::endl;
 		}
+		ImGui::SameLine();
 		if (ImGui::Button("Clear View")) {
 			meshes.clear();
 			renderMesh.clear();
-		}
-		ImGui::End();
-
-
-		ImGui::SetNextWindowPos(ImVec2(0, 220.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(300.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Paths management");
-
-		if (ImGui::Button("Add path")) {
-			std::string selectedPath = openFile();
-
-			if (!selectedPath.empty()) {
-				std::string path = selectedPath;
-				std::cout << "Selected: " << path << std::endl;
-				paths.push_back(path);
-			}
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Remove path") && selectedPath != -1) {
-			paths.erase(paths.begin() + selectedPath);
-			selectedPath = -1;
 		}
 		for (int i = 0; i < paths.size(); i++) {
 			std::string name = getName(paths[i]);
@@ -322,12 +335,11 @@ int main()
 				selectedPath = i;
 			}
 		}
-
 		ImGui::End();
 
-
+		// window 3 setup - buttons for exports of stats and objects
 		ImGui::SetNextWindowPos(ImVec2(1720.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Export options");
 		if (ImGui::Button("Export models") && !meshes.empty()) {
 			std::string savePath = saveFileObj();
@@ -336,10 +348,10 @@ int main()
 				if (xMaxWorld != 1 || xMinWorld != 0 ||
 					yMaxWorld != 1 || yMinWorld != 0 ||
 					zMaxWorld != 1 || zMinWorld != 0) {
-					exportReduced(meshes, savePath, box, false);
+					exportReduced(meshes, savePath, box);
 				}
 				else {
-					exportMeshes(meshes, savePath, box, false);
+					exportMeshes(meshes, savePath);
 				}
 			}
 		}
@@ -350,10 +362,10 @@ int main()
 				if (xMaxWorld != 1 || xMinWorld != 0 ||
 					yMaxWorld != 1 || yMinWorld != 0 ||
 					zMaxWorld != 1 || zMinWorld != 0) {
-					exportReduced(meshes, savePath, box, true);
+					exportStats(meshes, savePath, false, box);
 				}
 				else {
-					exportMeshes(meshes, savePath, box, true);
+					exportStats(meshes, savePath, true, box);
 				}
 			}
 		}
@@ -361,10 +373,10 @@ int main()
 		ImGui::End();
 
 
-
-		ImGui::SetNextWindowPos(ImVec2(0, 780.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(display.x, 300.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Bounding box size");
+		// window 4 setup - bounding box size manipulation
+		ImGui::SetNextWindowPos(ImVec2(0, 880.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(display.x, 200.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::Begin("Bounding box");
 		ImGui::SliderFloat("X size", &xMaxWorld, 0.0f, 1.0f);
 		ImGui::SliderFloat("X offset", &xMinWorld, 0.0f, 1.0f);
 		ImGui::SliderFloat("Y size", &yMaxWorld, 0.0f, 1.0f);
@@ -375,8 +387,9 @@ int main()
 
 		ImGui::End();
 
-		ImGui::SetNextWindowPos(ImVec2(1790.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(130 / 1920.0f * display.x, (1080.0f-450.0f) / 1080.0f * display.y), ImGuiCond_Once);
+		// window 5 setup - player paths import and showcase
+		ImGui::SetNextWindowPos(ImVec2(1790.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(130 / 1920.0f * display.x, (1080.0f-280.0f) / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Player paths");
 		ImGui::Checkbox("Show Paths", &showPlayers);
 		if (ImGui::Button("Load players")) {
@@ -385,9 +398,6 @@ int main()
 			if (!selectedPath.empty()) {
 				std::string path = selectedPath;
 				players = importPlayers(path, box);
-			}
-			if (!players.empty()) {
-				playerPaths = true;
 			}
 		}
 		if (ImGui::Button("Remove selection") && selectedPlayer != -1) {
@@ -410,8 +420,9 @@ int main()
 		ImGui::End();
 
 
-		ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(270.0f / 1920.0f * display.x, (1080.0f - 450.0f) / 1080.0f * display.y), ImGuiCond_Once);
+		//window 6 setup - camera path import, management and adjustment
+		ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(270.0f / 1920.0f * display.x, (1080.0f - 280.0f) / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Camera Path");
 
 		ImGui::Checkbox("Show path", &showCamera);
@@ -484,7 +495,7 @@ int main()
 		ImGui::SameLine();
 		if (ImGui::Button("Move camera") && cameraState == STATIONARY && cameraPoints.positions.size() > 0) {
 			cameraState = curves ? CURVE : POLY;
-			pathLUT = GetCameraPath(cameraPoints, cameraState == CURVE ? true : false);
+			pathLUT = cameraState == CURVE ? GetPathCurves(cameraPoints) : GetPathLines(cameraPoints);
 			nextPoint = selectedCamPos > 0 ? selectedCamPos : 0;
 			timeDelta = 0;
 			std::cout << "LUT has " << pathLUT.size() << " segments" << std::endl;
@@ -515,8 +526,10 @@ int main()
 		ImGui::EndChild();
 		ImGui::End();
 
+
+		// window 7 setup - editor for a single point on the camera path
 		ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
 		ImGui::Begin("Point Editor");
 
 		float x = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].x;
@@ -560,6 +573,7 @@ int main()
 		ImGui::End();
 
 
+		// update bounding box parametres
 		box.Xminus = box.lim_Xminus + xMinWorld * (box.lim_Xplus - box.lim_Xminus);
 		box.Yminus = box.lim_Yminus + yMinWorld * (box.lim_Yplus - box.lim_Yminus);
 		box.Zminus = box.lim_Zminus + zMinWorld * (box.lim_Zplus - box.lim_Zminus);
@@ -568,6 +582,8 @@ int main()
 		box.Yplus = box.Yminus + yMaxWorld * (box.lim_Yplus - box.lim_Yminus);
 		box.Zplus = box.Zminus + zMaxWorld * (box.lim_Zplus - box.lim_Zminus);
 
+
+		// updata camera based on mouse inputs - only if stationary
 		if (cameraState == STATIONARY) {
 			direction.x = cos(glm::radians(pitch)) * sin(glm::radians(yaw));
 			direction.y = sin(glm::radians(pitch));
@@ -602,7 +618,9 @@ int main()
 			}
 		}
 
+
 		ImGui::Render();
+
 
 		int w, h;
 		glfwGetFramebufferSize(window, &w, &h);
