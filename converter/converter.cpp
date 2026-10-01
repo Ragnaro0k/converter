@@ -164,7 +164,7 @@ std::string getName(const std::string& path) {
 	return path.substr(pos + 1);
 }
 
-float GetTimeDelta(auto &lastUpdate, int speed) {
+float GetTimeDelta(auto &lastUpdate, float speed) {
 	auto now = clockupdate::now();
 
 	float delta =
@@ -243,6 +243,7 @@ int main()
 	auto lastUpdate = clockupdate::now(); // real time delta for movement
 	int nextPoint = -1; // next anchor point for camera movement
 	float timeDelta = -1; // last update delta for movement
+	float viewT = -1;
 	enum CamState cameraState = STATIONARY; // camera mode switch
 	std::vector<ArcLengthTable> pathLUT; // // experimental camera movement implementation
 	glm::vec3 lastPos; // last position of the moving camera
@@ -263,314 +264,354 @@ int main()
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 		ImVec2 display = ImGui::GetIO().DisplaySize;
-
-		// window 1 setup - general info and movement adjustments
-		ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(500.0f / 1920.0f * display.x, 110.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Converter Tools");
-		ImGui::Checkbox("Wireframe", &wireframe);
-		ImGui::SameLine();
-		ImGui::Text("Number of faces: %d", nFaces);
-		ImGui::SliderFloat("Move speed", &moveSpeed, 1.0f, 100.0f);
-		ImGui::SliderFloat("Zoom speed", &zoomSpeed, 1.0f, 100.0f);
-		ImGui::SliderInt("Random Sampling", &randomSampling, 1, 10);
-		ImGui::Text("Drag mouse to rotate");
-
-		ImGui::End();
-
-		// window 2 setup - scene paths management and import
-		ImGui::SetNextWindowPos(ImVec2(0, 110.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(300.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Paths management");
-
-		if (ImGui::Button("Add path")) {
-			std::string selectedPath = openFile();
-
-			if (!selectedPath.empty()) {
-				std::string path = selectedPath;
-				std::cout << "Selected: " << path << std::endl;
-				paths.push_back(path);
-			}
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Remove path") && selectedPath != -1) {
-			paths.erase(paths.begin() + selectedPath);
-			selectedPath = -1;
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Load and render") && !paths.empty()) {
-			nFaces = 0;
-			BoundingBox tmp;
-			xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
-			float moveSpeed = 5.0f;
-			float zoomSpeed = 5.0f;
-			box = tmp;
-			meshes = importMesh(paths, renderMesh, randomSampling, box);
-			if (!meshes.empty() && !renderMesh.empty()) {
-				std::cout << "Mesh loaded and rotated" << std::endl;
-			}
-			else {
-				std::cerr << "Loading failed" << meshes.size() << " " << renderMesh.size() << std::endl;
-			}
-			for (auto& mesh : meshes) {
-				nFaces += (mesh.triangles.size() / 3);
-			}
-			std::cout << "Bounding Box:" << std::endl;
-			std::cout << "+X: " << box.Xplus << std::endl;
-			std::cout << "-X: " << box.Xminus << std::endl;
-			std::cout << "+Y: " << box.Yplus << std::endl;
-			std::cout << "-Y: " << box.Yminus << std::endl;
-			std::cout << "+Z: " << box.Zplus << std::endl;
-			std::cout << "-Z: " << box.Zminus << std::endl;
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Clear View")) {
-			meshes.clear();
-			renderMesh.clear();
-		}
-		for (int i = 0; i < paths.size(); i++) {
-			std::string name = getName(paths[i]);
-
-			if (ImGui::Selectable(name.c_str(), selectedPath == i)) {
-				selectedPath = i;
-			}
-		}
-		ImGui::End();
-
-		// window 3 setup - buttons for exports of stats and objects
-		ImGui::SetNextWindowPos(ImVec2(1720.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Export options");
-		if (ImGui::Button("Export models") && !meshes.empty()) {
-			std::string savePath = saveFileObj();
-
-			if (!savePath.empty()) {
-				if (xMaxWorld != 1 || xMinWorld != 0 ||
-					yMaxWorld != 1 || yMinWorld != 0 ||
-					zMaxWorld != 1 || zMinWorld != 0) {
-					exportReduced(meshes, savePath, box);
-				}
-				else {
-					exportMeshes(meshes, savePath);
-				}
-			}
-		}
-		if (ImGui::Button("Export stats") && !meshes.empty()) {
-			std::string savePath = saveFileTxt();
-
-			if (!savePath.empty()) {
-				if (xMaxWorld != 1 || xMinWorld != 0 ||
-					yMaxWorld != 1 || yMinWorld != 0 ||
-					zMaxWorld != 1 || zMinWorld != 0) {
-					exportStats(meshes, savePath, false, box);
-				}
-				else {
-					exportStats(meshes, savePath, true, box);
-				}
-			}
-		}
-
-		ImGui::End();
-
-
-		// window 4 setup - bounding box size manipulation
-		ImGui::SetNextWindowPos(ImVec2(0, 880.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(display.x, 200.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Bounding box");
-		ImGui::SliderFloat("X size", &xMaxWorld, 0.0f, 1.0f);
-		ImGui::SliderFloat("X offset", &xMinWorld, 0.0f, 1.0f);
-		ImGui::SliderFloat("Y size", &yMaxWorld, 0.0f, 1.0f);
-		ImGui::SliderFloat("Y offset", &yMinWorld, 0.0f, 1.0f);
-		ImGui::SliderFloat("Z size", &zMaxWorld, 0.0f, 1.0f);
-		ImGui::SliderFloat("Z offset", &zMinWorld, 0.0f, 1.0f);
-
-
-		ImGui::End();
-
-		// window 5 setup - player paths import and showcase
-		ImGui::SetNextWindowPos(ImVec2(1790.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(130 / 1920.0f * display.x, (1080.0f-280.0f) / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Player paths");
-		ImGui::Checkbox("Show Paths", &showPlayers);
-		if (ImGui::Button("Load players")) {
-			std::string selectedPath = openFile();
-
-			if (!selectedPath.empty()) {
-				std::string path = selectedPath;
-				players = importPlayers(path, box);
-			}
-		}
-		if (ImGui::Button("Remove selection") && selectedPlayer != -1) {
-			selectedPlayer = -1;
-		}
-		if (ImGui::Button("Export selected path") && selectedPlayer != -1) {
-			std::string savePath = saveFileTxt();
-			if(!savePath.empty())
-				exportPlayer(players[selectedPlayer], box, savePath);
-		}
-		ImGui::Separator();
-		ImGui::BeginChild("Players", ImVec2(0, 0), ImGuiChildFlags_Borders);
-		for (int i = 0; i < players.size(); i++) {
-			std::string name = players[i].name;
-			if (ImGui::Selectable(name.c_str(), selectedPlayer == i)) {
-				selectedPlayer = i;
-			}
-		}
-		ImGui::EndChild();
-		ImGui::End();
-
-
-		//window 6 setup - camera path import, management and adjustment
-		ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(270.0f / 1920.0f * display.x, (1080.0f - 280.0f) / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Camera Path");
-
-		ImGui::Checkbox("Show path", &showCamera);
-		ImGui::SameLine();
-		ImGui::Checkbox("Curves path", &curves);
-		if (ImGui::Button("Import from selected player") && selectedPlayer != -1) {
-			cameraPoints.positions = players[selectedPlayer].positions;
-			cameraPoints.origSize = cameraPoints.positions.size();
-			cameraPoints.original = std::vector<bool>(cameraPoints.positions.size(), true);
-			for (auto& p : cameraPoints.positions) {
-				p += glm::vec3(0.0f, 1.5f, 0.0f);
-				
-			}
-			glGenVertexArrays(1, &camVAO);
-			glGenBuffers(1, &camVBO);
-
-			glBindVertexArray(camVAO);
-
-			glBindBuffer(GL_ARRAY_BUFFER, camVBO);
-			glBufferData(GL_ARRAY_BUFFER, cameraPoints.positions.size() * sizeof(glm::vec3), cameraPoints.positions.data(), GL_DYNAMIC_DRAW);
-			glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
-
-			glEnableVertexAttribArray(0);
-			glBindVertexArray(0);
-
-
-			glGenVertexArrays(1, &pointVAO);
-			glGenBuffers(1, &pointVBO);
-		}
-
-		ImGui::SameLine();
-
-		if (ImGui::Button("Remove point") && selectedCamPos != -1) {
-			cameraPoints.positions.erase(cameraPoints.positions.begin() + selectedCamPos);
-			cameraPoints.original.erase(cameraPoints.original.begin() + selectedCamPos);
-			cameraPoints.origSize--;
-		}
-
-		if (ImGui::Button("Add point before") && selectedCamPos != -1) {
-			glm::vec3 newPos = glm::vec3(0.0f);
-			if (selectedCamPos == 0) {
-				newPos.x -= 1.0f;
-				
-			}
-			else {
-				newPos = cameraPoints.positions[selectedCamPos - 1] + 0.5f * (cameraPoints.positions[selectedCamPos] - cameraPoints.positions[selectedCamPos - 1]);
-			}
-			cameraPoints.positions.emplace(cameraPoints.positions.begin() + selectedCamPos, newPos);
-			cameraPoints.original.emplace(cameraPoints.original.begin() + selectedCamPos, false);
-
-		}
-
-		ImGui::SameLine();
-		if (ImGui::Button("Add point after") && selectedCamPos != -1) {
-			glm::vec3 newPos = glm::vec3(0.0f);
-			if (selectedCamPos == cameraPoints.positions.size()) {
-				newPos.x += 1.0f;
-			}
-			else {
-				newPos = cameraPoints.positions[selectedCamPos] + 0.5f * (cameraPoints.positions[selectedCamPos + 1] - cameraPoints.positions[selectedCamPos]);
-			}
-			cameraPoints.positions.emplace(cameraPoints.positions.begin() + selectedCamPos+1, newPos);
-			cameraPoints.original.emplace(cameraPoints.original.begin() + selectedCamPos + 1, false);
-		}
-		if (ImGui::Button("Export camera") && cameraPoints.positions.size() > 0) {
-			std::string savePath = saveFileTxt();
-			if (!savePath.empty()) exportCamera(cameraPoints.positions, savePath);
-		}
-
-		ImGui::SameLine();
-		if (ImGui::Button("Move camera") && cameraState == STATIONARY && cameraPoints.positions.size() > 0) {
-			cameraState = curves ? CURVE : POLY;
-			pathLUT = cameraState == CURVE ? GetPathCurves(cameraPoints) : GetPathLines(cameraPoints);
-			nextPoint = selectedCamPos > 0 ? selectedCamPos : 0;
-			timeDelta = 0;
-			std::cout << "LUT has " << pathLUT.size() << " segments" << std::endl;
-			lastUpdate = clockupdate::now();
-			lastPos = cameraPoints.positions[nextPoint];
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("Cancel movement") && cameraState != STATIONARY) {
+		
+		if (ImGui::IsKeyPressed(ImGuiKey_C) && cameraState != STATIONARY) {
 			cameraState = STATIONARY;
 		}
-		ImGui::Separator();
-		ImGui::BeginChild("Camera points", ImVec2(0, 0), ImGuiChildFlags_Borders);
-		int pointCounter = 0;
-		for (int i = 0; i < cameraPoints.positions.size(); i++) {
-			std::string p;
-			if (cameraPoints.original[i]) {
-				p = "point " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints.positions[i].x) + " " + std::to_string(cameraPoints.positions[i].y) + " " + std::to_string(cameraPoints.positions[i].z);
+
+		if (cameraState == STATIONARY) {
+			// window 1 setup - general info and movement adjustments
+			ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(500.0f / 1920.0f * display.x, 110.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::Begin("Converter Tools");
+			ImGui::Checkbox("Wireframe", &wireframe);
+			ImGui::SameLine();
+			ImGui::Text("Number of faces: %d", nFaces);
+			ImGui::SliderFloat("Move speed", &moveSpeed, 1.0f, 100.0f);
+			ImGui::SliderFloat("Zoom speed", &zoomSpeed, 1.0f, 100.0f);
+			ImGui::SliderInt("Random Sampling", &randomSampling, 1, 10);
+			ImGui::Text("Drag mouse to rotate");
+
+			ImGui::End();
+		}
+
+		if (cameraState == STATIONARY) {
+			// window 2 setup - scene paths management and import
+			ImGui::SetNextWindowPos(ImVec2(0, 110.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(300.0f / 1920.0f * display.x, 150.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::Begin("Paths management");
+
+			if (ImGui::Button("Add path")) {
+				std::string selectedPath = openFile();
+
+				if (!selectedPath.empty()) {
+					std::string path = selectedPath;
+					std::cout << "Selected: " << path << std::endl;
+					paths.push_back(path);
+				}
 			}
-			else {
-				p = "point new " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints.positions[i].x) + " " + std::to_string(cameraPoints.positions[i].y) + " " + std::to_string(cameraPoints.positions[i].z);
+			ImGui::SameLine();
+			if (ImGui::Button("Remove path") && selectedPath != -1) {
+				paths.erase(paths.begin() + selectedPath);
+				selectedPath = -1;
 			}
-			
-			if (ImGui::Selectable(p.c_str(), selectedCamPos == i)) {
-				selectedCamPos = i;
+			ImGui::SameLine();
+			if (ImGui::Button("Load and render") && !paths.empty()) {
+				nFaces = 0;
+				BoundingBox tmp;
+				xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1;
+				float moveSpeed = 5.0f;
+				float zoomSpeed = 5.0f;
+				box = tmp;
+				meshes = importMesh(paths, renderMesh, randomSampling, box);
+				if (!meshes.empty() && !renderMesh.empty()) {
+					std::cout << "Mesh loaded and rotated" << std::endl;
+				}
+				else {
+					std::cerr << "Loading failed" << meshes.size() << " " << renderMesh.size() << std::endl;
+				}
+				for (auto& mesh : meshes) {
+					nFaces += (mesh.triangles.size() / 3);
+				}
+				std::cout << "Bounding Box:" << std::endl;
+				std::cout << "+X: " << box.Xplus << std::endl;
+				std::cout << "-X: " << box.Xminus << std::endl;
+				std::cout << "+Y: " << box.Yplus << std::endl;
+				std::cout << "-Y: " << box.Yminus << std::endl;
+				std::cout << "+Z: " << box.Zplus << std::endl;
+				std::cout << "-Z: " << box.Zminus << std::endl;
 			}
-			pointCounter++;
+			ImGui::SameLine();
+			if (ImGui::Button("Clear View")) {
+				meshes.clear();
+				renderMesh.clear();
+			}
+			for (int i = 0; i < paths.size(); i++) {
+				std::string name = getName(paths[i]);
+
+				if (ImGui::Selectable(name.c_str(), selectedPath == i)) {
+					selectedPath = i;
+				}
+			}
+			ImGui::End();
 		}
-		ImGui::EndChild();
-		ImGui::End();
 
 
-		// window 7 setup - editor for a single point on the camera path
-		ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
-		ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
-		ImGui::Begin("Point Editor");
+		if (cameraState == STATIONARY) {
+			// window 3 setup - buttons for exports of stats and objects
+			ImGui::SetNextWindowPos(ImVec2(1720.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::Begin("Export options");
+			if (ImGui::Button("Export models") && !meshes.empty()) {
+				std::string savePath = saveFileObj();
 
-		float x = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].x;
-		float y = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].y;
-		float z = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].z;
-		
-		ImGui::InputFloat("X  ", &x);
-		ImGui::SameLine();
-		if (ImGui::Button("+##button1") && selectedCamPos != -1) {
-			x += 1.0f;
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("-##button2") && selectedCamPos != -1) {
-			x -= 1.0f;
+				if (!savePath.empty()) {
+					if (xMaxWorld != 1 || xMinWorld != 0 ||
+						yMaxWorld != 1 || yMinWorld != 0 ||
+						zMaxWorld != 1 || zMinWorld != 0) {
+						exportReduced(meshes, savePath, box);
+					}
+					else {
+						exportMeshes(meshes, savePath);
+					}
+				}
+			}
+			if (ImGui::Button("Export stats") && !meshes.empty()) {
+				std::string savePath = saveFileTxt();
+
+				if (!savePath.empty()) {
+					if (xMaxWorld != 1 || xMinWorld != 0 ||
+						yMaxWorld != 1 || yMinWorld != 0 ||
+						zMaxWorld != 1 || zMinWorld != 0) {
+						exportStats(meshes, savePath, false, box);
+					}
+					else {
+						exportStats(meshes, savePath, true, box);
+					}
+				}
+			}
+
+			ImGui::End();
 		}
 
-		ImGui::InputFloat("Y  ", &y);
-		ImGui::SameLine();
-		if (ImGui::Button("+##button3") && selectedCamPos != -1) {
-			y += 1.0f;
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("-##button4") && selectedCamPos != -1) {
-			y -= 1.0f;
-		}
-		ImGui::InputFloat("Z  ", &z);
-		ImGui::SameLine();
-		if (ImGui::Button("+##button5") && selectedCamPos != -1) {
-			z += 1.0f;
-		}
-		ImGui::SameLine();
-		if (ImGui::Button("-##button6") && selectedCamPos != -1) {
-			z -= 1.0f;
+
+		if (cameraState == STATIONARY) {
+			// window 4 setup - bounding box size manipulation
+			ImGui::SetNextWindowPos(ImVec2(0, 880.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(display.x, 200.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::Begin("Bounding box");
+			ImGui::SliderFloat("X size", &xMaxWorld, 0.0f, 1.0f);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(50.0f);
+			ImGui::InputFloat("##button1", &xMaxWorld, 0.0f, 1.0f);
+			ImGui::SliderFloat("X offset", &xMinWorld, 0.0f, 1.0f);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(50.0f);
+			ImGui::InputFloat("##button2", &xMinWorld, 0.0f, 1.0f);
+			ImGui::SliderFloat("Y size", &yMaxWorld, 0.0f, 1.0f);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(50.0f);
+			ImGui::InputFloat("##button3", &yMaxWorld, 0.0f, 1.0f);
+			ImGui::SliderFloat("Y offset", &yMinWorld, 0.0f, 1.0f);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(50.0f);
+			ImGui::InputFloat("##button4", &yMinWorld, 0.0f, 1.0f);
+			ImGui::SliderFloat("Z size", &zMaxWorld, 0.0f, 1.0f);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(50.0f);
+			ImGui::InputFloat("##button5", &zMaxWorld, 0.0f, 1.0f);
+			ImGui::SliderFloat("Z offset", &zMinWorld, 0.0f, 1.0f);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(50.0f);
+			ImGui::InputFloat("##button6", &zMinWorld, 0.0f, 1.0f);
+
+
+			ImGui::End();
 		}
 
-		if (selectedCamPos > -1) {
-			cameraPoints.positions[selectedCamPos].x = x;
-			cameraPoints.positions[selectedCamPos].y = y;
-			cameraPoints.positions[selectedCamPos].z = z;
+
+
+		if (cameraState == STATIONARY) {
+			// window 5 setup - player paths import and showcase
+			ImGui::SetNextWindowPos(ImVec2(1790.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(130 / 1920.0f * display.x, (1080.0f - 280.0f) / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::Begin("Player paths");
+			ImGui::Checkbox("Show Paths", &showPlayers);
+			if (ImGui::Button("Load players")) {
+				std::string selectedPath = openFile();
+
+				if (!selectedPath.empty()) {
+					std::string path = selectedPath;
+					players = importPlayers(path, box);
+				}
+			}
+			if (ImGui::Button("Remove selection") && selectedPlayer != -1) {
+				selectedPlayer = -1;
+			}
+			if (ImGui::Button("Export selected path") && selectedPlayer != -1) {
+				std::string savePath = saveFileTxt();
+				if (!savePath.empty())
+					exportPlayer(players[selectedPlayer], box, savePath);
+			}
+			ImGui::Separator();
+			ImGui::BeginChild("Players", ImVec2(0, 0), ImGuiChildFlags_Borders);
+			for (int i = 0; i < players.size(); i++) {
+				std::string name = players[i].name;
+				if (ImGui::Selectable(name.c_str(), selectedPlayer == i)) {
+					selectedPlayer = i;
+				}
+			}
+			ImGui::EndChild();
+			ImGui::End();
 		}
-		ImGui::End();
+
+
+		if (cameraState == STATIONARY) {
+			//window 6 setup - camera path import, management and adjustment
+			ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(270.0f / 1920.0f * display.x, (1080.0f - 280.0f) / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::Begin("Camera Path");
+
+			ImGui::Checkbox("Show path", &showCamera);
+			ImGui::SameLine();
+			ImGui::Checkbox("Curves path", &curves);
+			if (ImGui::Button("Import from selected player") && selectedPlayer != -1) {
+				cameraPoints.positions = players[selectedPlayer].positions;
+				cameraPoints.origSize = cameraPoints.positions.size();
+				cameraPoints.original = std::vector<bool>(cameraPoints.positions.size(), true);
+				for (auto& p : cameraPoints.positions) {
+					p += glm::vec3(0.0f, 1.5f, 0.0f);
+
+				}
+				glGenVertexArrays(1, &camVAO);
+				glGenBuffers(1, &camVBO);
+
+				glBindVertexArray(camVAO);
+
+				glBindBuffer(GL_ARRAY_BUFFER, camVBO);
+				glBufferData(GL_ARRAY_BUFFER, cameraPoints.positions.size() * sizeof(glm::vec3), cameraPoints.positions.data(), GL_DYNAMIC_DRAW);
+				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+
+				glEnableVertexAttribArray(0);
+				glBindVertexArray(0);
+
+
+				glGenVertexArrays(1, &pointVAO);
+				glGenBuffers(1, &pointVBO);
+			}
+
+			ImGui::SameLine();
+
+			if (ImGui::Button("Remove point") && selectedCamPos != -1) {
+				cameraPoints.positions.erase(cameraPoints.positions.begin() + selectedCamPos);
+				cameraPoints.original.erase(cameraPoints.original.begin() + selectedCamPos);
+				cameraPoints.origSize--;
+			}
+
+			if (ImGui::Button("Add point before") && selectedCamPos != -1) {
+				glm::vec3 newPos = glm::vec3(0.0f);
+				if (selectedCamPos == 0) {
+					newPos.x -= 1.0f;
+
+				}
+				else {
+					newPos = cameraPoints.positions[selectedCamPos - 1] + 0.5f * (cameraPoints.positions[selectedCamPos] - cameraPoints.positions[selectedCamPos - 1]);
+				}
+				cameraPoints.positions.emplace(cameraPoints.positions.begin() + selectedCamPos, newPos);
+				cameraPoints.original.emplace(cameraPoints.original.begin() + selectedCamPos, false);
+
+			}
+
+			ImGui::SameLine();
+			if (ImGui::Button("Add point after") && selectedCamPos != -1) {
+				glm::vec3 newPos = glm::vec3(0.0f);
+				if (selectedCamPos == cameraPoints.positions.size()) {
+					newPos.x += 1.0f;
+				}
+				else {
+					newPos = cameraPoints.positions[selectedCamPos] + 0.5f * (cameraPoints.positions[selectedCamPos + 1] - cameraPoints.positions[selectedCamPos]);
+				}
+				cameraPoints.positions.emplace(cameraPoints.positions.begin() + selectedCamPos + 1, newPos);
+				cameraPoints.original.emplace(cameraPoints.original.begin() + selectedCamPos + 1, false);
+			}
+			if (ImGui::Button("Export camera") && cameraPoints.positions.size() > 0) {
+				std::string savePath = saveFileTxt();
+				if (!savePath.empty()) exportCamera(cameraPoints.positions, savePath);
+			}
+
+			ImGui::SameLine();
+			if (ImGui::Button("Move camera") && cameraState == STATIONARY && cameraPoints.positions.size() > 0) {
+				cameraState = curves ? CURVE : POLY;
+				pathLUT = cameraState == CURVE ? GetPathCurves(cameraPoints) : GetPathLines(cameraPoints);
+				nextPoint = selectedCamPos > 0 ? selectedCamPos : 0;
+				timeDelta = 0;
+				std::cout << "LUT has " << pathLUT.size() << " segments" << std::endl;
+				lastUpdate = clockupdate::now();
+				lastPos = cameraPoints.positions[nextPoint];
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel movement") && cameraState != STATIONARY) {
+				cameraState = STATIONARY;
+			}
+			ImGui::Separator();
+			ImGui::BeginChild("Camera points", ImVec2(0, 0), ImGuiChildFlags_Borders);
+			int pointCounter = 0;
+			for (int i = 0; i < cameraPoints.positions.size(); i++) {
+				std::string p;
+				if (cameraPoints.original[i]) {
+					p = "point " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints.positions[i].x) + " " + std::to_string(cameraPoints.positions[i].y) + " " + std::to_string(cameraPoints.positions[i].z);
+				}
+				else {
+					p = "point new " + std::to_string(pointCounter) + ": " + std::to_string(cameraPoints.positions[i].x) + " " + std::to_string(cameraPoints.positions[i].y) + " " + std::to_string(cameraPoints.positions[i].z);
+				}
+
+				if (ImGui::Selectable(p.c_str(), selectedCamPos == i)) {
+					selectedCamPos = i;
+				}
+				pointCounter++;
+			}
+			ImGui::EndChild();
+			ImGui::End();
+		}
+
+
+		if (cameraState == STATIONARY) {
+			// window 7 setup - editor for a single point on the camera path
+			ImGui::SetNextWindowPos(ImVec2(1520.0f / 1920.0f * display.x, 0), ImGuiCond_Once);
+			ImGui::SetNextWindowSize(ImVec2(200.0f / 1920.0f * display.x, 80.0f / 1080.0f * display.y), ImGuiCond_Once);
+			ImGui::Begin("Point Editor");
+
+			float x = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].x;
+			float y = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].y;
+			float z = selectedCamPos == -1 ? 0 : cameraPoints.positions[selectedCamPos].z;
+
+			ImGui::InputFloat("X  ", &x);
+			ImGui::SameLine();
+			if (ImGui::Button("+##button1") && selectedCamPos != -1) {
+				x += 1.0f;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("-##button2") && selectedCamPos != -1) {
+				x -= 1.0f;
+			}
+
+			ImGui::InputFloat("Y  ", &y);
+			ImGui::SameLine();
+			if (ImGui::Button("+##button3") && selectedCamPos != -1) {
+				y += 1.0f;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("-##button4") && selectedCamPos != -1) {
+				y -= 1.0f;
+			}
+			ImGui::InputFloat("Z  ", &z);
+			ImGui::SameLine();
+			if (ImGui::Button("+##button5") && selectedCamPos != -1) {
+				z += 1.0f;
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("-##button6") && selectedCamPos != -1) {
+				z -= 1.0f;
+			}
+
+			if (selectedCamPos > -1) {
+				cameraPoints.positions[selectedCamPos].x = x;
+				cameraPoints.positions[selectedCamPos].y = y;
+				cameraPoints.positions[selectedCamPos].z = z;
+			}
+			ImGui::End();
+		}
+
 
 
 		// update bounding box parametres
@@ -631,7 +672,7 @@ int main()
 			glPolygonMode(GL_FRONT_AND_BACK, wireframe ? GL_LINE : GL_FILL);
 
 			if (cameraState != STATIONARY) {
-				timeDelta += GetTimeDelta(lastUpdate, 1.0f);
+				timeDelta += GetTimeDelta(lastUpdate, 0.75f);
 				//std::cout << timeDelta << std::endl;
 				if (timeDelta >= 1.0f) {
 					while (timeDelta >= 1.0f) {
@@ -702,9 +743,21 @@ int main()
 
 				break;
 			case CURVE:
+				viewT = timeDelta+0.5f;
+				while (viewT >= 1.0f) {
+					//std::cout << "Lowering..." << std::endl;
+					viewT -= 1.0f;
+				}
 				cameraPos = EvaluateArcLength(pathLUT[nextPoint].samples, timeDelta, pathLUT[nextPoint].normalizedDistance);
-				targetTMP = cameraPos + glm::vec3(1.0f, 0.0f, 0.0f);
-				//targetTMP = glm::normalize(cameraPos - lastPos) + cameraPos;
+				//targetTMP = cameraPos + glm::vec3(0.0f, 0.0f, 1.0f);
+				if (viewT < timeDelta) {
+					//std::cout << "Event triggered" << std::endl;
+					targetTMP = nextPoint + 1 >= pathLUT.size() - 1 ? cameraPoints.positions[cameraPoints.positions.size() - 1] : EvaluateArcLength(pathLUT[nextPoint + 1].samples, viewT, pathLUT[nextPoint+1].normalizedDistance);
+				}
+				else {
+					targetTMP = EvaluateArcLength(pathLUT[nextPoint].samples, viewT, pathLUT[nextPoint].normalizedDistance);
+				}
+				//std::cout << "Tangent: " << targetTMP.x << " " << targetTMP.y << " " << targetTMP.z << std::endl;
 				//std::cout << "Camera: " << cameraPos.x << " " << cameraPos.y << " " << cameraPos.z << std::endl;
 				//std::cout << "Tangent: " << targetTMP.x << " " << targetTMP.y << " " << targetTMP.z << std::endl;
 				view = glm::lookAt(
