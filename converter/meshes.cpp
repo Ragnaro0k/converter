@@ -75,8 +75,52 @@ int getAABBvector(std::vector<int>& segmentsAABB, const std::vector<Mesh>& meshe
 	return cellsCovered;
 }
 
+bool isInBounds(glm::vec3 vertex, BoundingBox& box) {
+	if (vertex.x > box.Xplus) return false;
+	if (vertex.x < box.Xminus) return false;
+	if (vertex.y > box.Yplus) return false;
+	if (vertex.y < box.Yminus) return false;
+	if (vertex.z > box.Zplus) return false;
+	if (vertex.z < box.Zminus) return false;
+	return true;
+}
 
 void exportStats(const std::vector<Mesh>& meshes, std::string fname, bool reduced, BoundingBox& box) {
+
+	std::vector<Mesh> reducedMeshes;
+
+	for (auto& mesh : meshes) {
+		Mesh reducedmesh;
+		std::vector<bool> vertexUsed(mesh.vertices.size(), false);
+
+		for (uint32_t i = 0; i < mesh.triangles.size(); i += 3) {
+			if (isInBounds(mesh.vertices[mesh.triangles[i]], box) || isInBounds(mesh.vertices[mesh.triangles[i + 1]], box) || isInBounds(mesh.vertices[mesh.triangles[i + 2]], box)) {
+				reducedmesh.triangles.push_back(mesh.triangles[i]);
+				reducedmesh.triangles.push_back(mesh.triangles[i + 1]);
+				reducedmesh.triangles.push_back(mesh.triangles[i + 2]);
+				vertexUsed[mesh.triangles[i]] = true;
+				vertexUsed[mesh.triangles[i + 1]] = true;
+				vertexUsed[mesh.triangles[i + 2]] = true;
+			}
+		}
+		uint32_t vertexCount = 0;
+		std::unordered_map<uint32_t, uint32_t> reducedOffset;
+		for (uint32_t i = 0; i < mesh.vertices.size(); i++) {
+			if (vertexUsed[i]) {
+				reducedmesh.vertices.push_back(mesh.vertices[i]);
+				reducedOffset[i] = vertexCount;
+				vertexCount++;
+			}
+		}
+		for (uint32_t i = 0; i < reducedmesh.triangles.size(); i++) {
+			reducedmesh.triangles[i] = reducedOffset[reducedmesh.triangles[i]];
+		}
+		if (!reducedmesh.vertices.empty()) {
+			reducedmesh.name = mesh.name;
+			reducedMeshes.push_back(reducedmesh);
+		}
+	}
+
 	std::cout << "Starting data export..." << std::endl;
 	int segmentsRow = 128;
 	int triangles = 0;
@@ -104,11 +148,11 @@ void exportStats(const std::vector<Mesh>& meshes, std::string fname, bool reduce
 
 	std::vector<int> segments(segmentsRow * segmentsRow * segmentsRow, 0);
 	std::vector<int> segmentsAABB(segmentsRow * segmentsRow * segmentsRow, 0);
-	int AABBcoverage = getAABBvector(segmentsAABB, meshes, box, xStep, yStep, zStep, segmentsRow);
+	int AABBcoverage = getAABBvector(segmentsAABB, reducedMeshes, box, xStep, yStep, zStep, segmentsRow);
 
 
 	std::cout << "Initiating for loop..." << std::endl;
-	for (auto& m : meshes) {
+	for (auto& m : reducedMeshes) {
 		objects++;
 		triangles += m.triangles.size() / 3;
 		verts += m.vertices.size();
@@ -272,18 +316,13 @@ void exportStats(const std::vector<Mesh>& meshes, std::string fname, bool reduce
 	file << "Gini coefficient of all cells (includes empty cells in the calculation): " << AABBginiFull << std::endl;
 	
 	file << std::endl;
-	if (reduced) {
-		file << "Bounding box values:" << std::endl;
-		file << "X size: " << (box.Xplus - box.Xminus)/ (box.lim_Xplus - box.lim_Xminus) << std::endl;
-		file << "X offset: " << (box.Xminus - box.lim_Xminus)/ (box.lim_Xplus - box.lim_Xminus) << std::endl;
-		file << "Y size: " << (box.Yplus - box.Yminus) / (box.lim_Yplus - box.lim_Yminus) << std::endl;
-		file << "Y offset: " << (box.Yminus - box.lim_Yminus) / (box.lim_Yplus - box.lim_Yminus) << std::endl;
-		file << "Z size: " << (box.Zplus - box.Zminus) / (box.lim_Zplus - box.lim_Zminus) << std::endl;
-		file << "Z offset: " << (box.Zminus - box.lim_Zminus) / (box.lim_Zplus - box.lim_Zminus) << std::endl;
-	}
-	else {
-		file << "Default bounding box used for export" << std::endl;
-	}
+	file << "Bounding box values:" << std::endl;
+	file << "X size: " << (box.Xplus - box.Xminus)/ (box.lim_Xplus - box.lim_Xminus) << std::endl;
+	file << "X offset: " << (box.Xminus - box.lim_Xminus)/ (box.lim_Xplus - box.lim_Xminus) << std::endl;
+	file << "Y size: " << (box.Yplus - box.Yminus) / (box.lim_Yplus - box.lim_Yminus) << std::endl;
+	file << "Y offset: " << (box.Yminus - box.lim_Yminus) / (box.lim_Yplus - box.lim_Yminus) << std::endl;
+	file << "Z size: " << (box.Zplus - box.Zminus) / (box.lim_Zplus - box.lim_Zminus) << std::endl;
+	file << "Z offset: " << (box.Zminus - box.lim_Zminus) / (box.lim_Zplus - box.lim_Zminus) << std::endl;
 
 	file.close();
 	std::cout << "Statistics exported to " << fname << std::endl;
@@ -545,15 +584,7 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 	return meshes;
 }
 
-bool isInBounds(glm::vec3 vertex, BoundingBox& box) {
-	if (vertex.x > box.Xplus) return false;
-	if (vertex.x < box.Xminus) return false;
-	if (vertex.y > box.Yplus) return false;
-	if (vertex.y < box.Yminus) return false;
-	if (vertex.z > box.Zplus) return false;
-	if (vertex.z < box.Zminus) return false;
-	return true;
-}
+
 
 void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box) {
 	std::vector<Mesh> reducedMeshes;
