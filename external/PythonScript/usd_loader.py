@@ -1,4 +1,4 @@
-from pxr import Usd, UsdGeom, Sdf, Gf
+from pxr import Usd, UsdGeom, Sdf, Gf, UsdSkel, Gf
 import numpy as np
 '''
 method for loading geometry from a USD stage
@@ -8,42 +8,49 @@ returns: a list of meshes; A mesh contains: a list of vertices (points), a list 
 '''
 
 def load_meshes(paths, time=Usd.TimeCode.Default()):
+    # 1. Open the original stage composed of your files
     layer = Sdf.Layer.CreateAnonymous(".usda")
-
     for path in paths:
         layer.subLayerPaths.append(path)
-
+    
     stage = Usd.Stage.Open(layer)
     stage.Load()
 
-    meshes = []
+    # 2. Setup the arguments for BakeSkinning
+    # Create a primitive range starting from the pseudo root
+    prim_range = Usd.PrimRange(stage.GetPseudoRoot(), Usd.TraverseInstanceProxies())
+    
+    # Create a time interval containing just the current evaluation time
+    # (Gf.Interval expects numeric float values, so we extract it via Value())
+    time_numeric = time.GetValue()
+    time_interval = Gf.Interval(time_numeric, time_numeric)
 
+    # 3. Correctly bake the skeletal transformations into the range
+    UsdSkel.BakeSkinning(prim_range, time_interval)
+
+    meshes = []
+    
+    # Re-traverse the stage to collect the now-baked geometry data
     traversal = Usd.PrimRange(
         stage.GetPseudoRoot(),
         Usd.TraverseInstanceProxies()
     )
 
     for prim in traversal:
-
         if not prim.IsA(UsdGeom.Mesh):
             continue
 
         imageable = UsdGeom.Imageable(prim)
-
         if imageable.ComputeVisibility(time) == UsdGeom.Tokens.invisible:
             continue
 
         purpose = imageable.ComputePurpose()
-
-        if purpose not in (
-            UsdGeom.Tokens.default_,
-            UsdGeom.Tokens.render,
-            None,
-        ):
+        if purpose not in (UsdGeom.Tokens.default_, UsdGeom.Tokens.render, None):
             continue
 
         mesh = UsdGeom.Mesh(prim)
         name = str(prim.GetName())
+        
         points = mesh.GetPointsAttr().Get(time)
         counts = mesh.GetFaceVertexCountsAttr().Get(time)
         indices = mesh.GetFaceVertexIndicesAttr().Get(time)
@@ -51,9 +58,9 @@ def load_meshes(paths, time=Usd.TimeCode.Default()):
         if not points:
             continue
 
-        matrix = UsdGeom.Xformable(
-            prim
-        ).ComputeLocalToWorldTransform(time)
+        # Standard ComputeLocalToWorldTransform works perfectly across all 
+        # geometry types now because the skinning layer has been flattened out.
+        matrix = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(time)
 
         meshes.append({
             "primPath": str(prim.GetPath()),

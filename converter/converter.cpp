@@ -45,6 +45,7 @@ GLuint createShader() {
         out vec4 FragColor;
 		in vec3 vPos;
 		uniform bool wireframe;
+		uniform bool moving;
 		uniform vec3 maxBounds;
 		uniform vec3 minBounds;
 		uniform bool triangles;
@@ -54,7 +55,7 @@ GLuint createShader() {
 			if(!triangles){
 				FragColor = vec4(0.0, 0.0, 1.0, 1.0);
 			}else{
-				if(wireframe){
+				if(wireframe && !moving){
 					if(vPos.x > maxBounds.x || vPos.x < minBounds.x ||
 						vPos.y > maxBounds.y || vPos.y < minBounds.y ||
 						vPos.z > maxBounds.z || vPos.z < minBounds.z){
@@ -74,8 +75,11 @@ GLuint createShader() {
 					if(vPos.x > maxBounds.x || vPos.x < minBounds.x ||
 						vPos.y > maxBounds.y || vPos.y < minBounds.y ||
 						vPos.z > maxBounds.z || vPos.z < minBounds.z){
-
-						color = vec3(1.0, 0.0, 0.0) * diff + vec3(0.2);
+						if(!moving){
+							color = vec3(1.0, 0.0, 0.0) * diff + vec3(0.2);
+						}else{
+							color = vec3(0.2, 0.2, 0.1);
+						}
 					}else{
 						color = vec3(0.7) * diff + vec3(0.2);
 					}
@@ -535,7 +539,7 @@ int main()
 				pathLUT = cameraState == CURVE ? GetPathCurves(cameraPoints) : GetPathLines(cameraPoints);
 				nextPoint = selectedCamPos > 0 ? selectedCamPos : 0;
 				timeDelta = 0;
-				std::cout << "LUT has " << pathLUT.size() << " segments" << std::endl;
+				//std::cout << "LUT has " << pathLUT.size() << " segments" << std::endl;
 				lastUpdate = clockupdate::now();
 				lastPos = cameraPoints.positions[nextPoint];
 			}
@@ -786,6 +790,8 @@ int main()
 				1, GL_FALSE, glm::value_ptr(model));
 			glUniform1i(glGetUniformLocation(shader, "wireframe"),
 				wireframe);
+			glUniform1i(glGetUniformLocation(shader, "moving"),
+				cameraState == STATIONARY ? false : true);
 
 			glUniform1i(glGetUniformLocation(shader, "triangles"),
 				true);

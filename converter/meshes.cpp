@@ -10,6 +10,8 @@
 #include <vector>
 #include <glm/gtc/type_ptr.hpp>
 #include <unordered_map>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/string_cast.hpp>
 
 /** Maximum number of triangles per buffer */
 const size_t MAX_TRIANGLES = 1'000'000;
@@ -304,13 +306,13 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 	std::cout << "Python returned " << std::endl;
 	int meshCount = 0;
 	int verts = 0;
+	int brushCounter = 0;
 	for (auto pyMesh : pyMeshes) {
 		meshCount++;
 		RawMesh mesh;
-
 		mesh.name = pyMesh["name"].cast<std::string>();
-		std::size_t found = mesh.name.find("brush");
-		if (found == std::string::npos && !(mesh.name.substr(0, 3) == "geo")) {
+		std::size_t found = mesh.name.find("sxmyjg cgyjc");
+		if (/*found == std::string::npos && !(mesh.name.substr(0, 3) == "geo")*/true) {
 			//mesh.mpu = pyMesh["mpu"].cast<float>();
 
 			py::array_t<float> points = pyMesh["points"].cast<py::array_t<float>>();
@@ -345,15 +347,20 @@ std::vector<RawMesh> loadFromPython(const std::vector<std::string>& paths) {
 
 			float* mdata = static_cast<float*>(mbuf.ptr);
 
-			mesh.transform = glm::make_mat4(mdata);
+			mesh.transform =glm::make_mat4(
+					reinterpret_cast<float*>(mdata));
+			/*if (mesh.name.substr(0, 3) == "geo") {
+				std::cout << "Mesh " << mesh.name << "has matrix" << std::endl;
+				std::cout << glm::to_string(mesh.transform) << std::endl;
+				std::cout << std::endl;
+			}*/
 
 			verts += mesh.vertices.size();
 			result.push_back(std::move(mesh));
-		}else {
-			//std::cout << "Brush located!" << std::endl;
 		}
 
 	}
+	//std::cout << brushCounter << " of brushes was located" << std::endl;
 	std::cout << meshCount << " of meshes imported" << std::endl;
 	std::cout << verts << " of vertices imported" << std::endl;
 	return result;
