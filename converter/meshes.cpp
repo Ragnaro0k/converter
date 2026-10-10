@@ -12,6 +12,8 @@
 #include <unordered_map>
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
+#include <cstdint>
+#include <glm/glm.hpp>
 
 /** Maximum number of triangles per buffer */
 const size_t MAX_TRIANGLES = 1'000'000;
@@ -815,26 +817,49 @@ std::vector<Player> importPlayers(const std::string& path, BoundingBox& box) {
 	return newRet;
 }
 
-void exportPlayer(const Player& player, BoundingBox& box, std::string filename) {
-	std::ofstream file(filename);
-	if (!file.is_open()) {
-		throw std::runtime_error("Cannot open file: " + filename);
+
+void ExportPaths(std::string pName, std::vector<Player>& players) {
+
+	std::ofstream file(pName, std::ios::binary);
+	int seconds = -1;
+	for (auto& pl : players) {
+		seconds = static_cast<int>(pl.positions.size()) > seconds ? static_cast<int>(pl.positions.size()) : seconds;
 	}
-	for (auto& v : player.positions) {
-		if (isInBounds(v, box)) {
-			file << v.x << " " << v.y << " " << v.z << "\n";
+	uint32_t version = 1;
+	uint32_t frameCount = seconds * 60;
+	uint32_t objectCount = static_cast<uint32_t>(players.size());
+
+	file.write("MOTN", 4);
+	file.write(reinterpret_cast<const char*>(&version), sizeof(version));
+	file.write(reinterpret_cast<const char*>(&frameCount), sizeof(frameCount));
+	file.write(reinterpret_cast<const char*>(&objectCount), sizeof(objectCount));
+
+	glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
+	glm::vec3 lastPos, nextPos, playerPos, playerTan, x, y, z;
+	glm::mat4 out = glm::mat4(1.0f);
+
+	for (int i = 0; i < seconds; ++i) {
+		for (int t = 0; t < 60; ++t) {
+			float delta = 1.0f / static_cast<float>(t);
+			for (size_t j = 0; j < players.size(); ++j) {
+				int playerPoint = i % players[j].positions.size() - 1;
+				lastPos = players[j].positions[playerPoint];
+				nextPos = players[j].positions[playerPoint + 1];
+				playerPos = lastPos + delta * (nextPos - lastPos);
+				playerTan = glm::normalize(nextPos - lastPos);
+				x = playerTan;
+				z = glm::normalize(glm::cross(x, playerUp));
+				y = glm::cross(z, x);
+				out[0] = glm::vec4(x, 0.0f);
+				out[1] = glm::vec4(y, 0.0f);
+				out[2] = glm::vec4(z, 0.0f);
+				out[3] = glm::vec4(playerPos, 1.0f);
+				file.write(reinterpret_cast<const char*>(glm::value_ptr(out)), sizeof(float) * 16);
+			}
 		}
 	}
-	file.close();
-}
-
-void exportCamera(const std::vector<glm::vec3> &points, std::string filename) {
-	std::ofstream file(filename);
-	if (!file.is_open()) {
-		throw std::runtime_error("Cannot open file: " + filename);
-	}
-	for (auto& v : points) {
-		file << v.x << " " << v.y << " " << v.z << "\n";
+	if (!file) {
+		throw std::runtime_error("Failed to write motion data");
 	}
 	file.close();
 }

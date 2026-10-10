@@ -5,6 +5,7 @@
 #include <cmath>
 #include <vector>
 #include <iostream>
+#include <fstream>
 
 /**
 * Calculates tangent to a point on the path
@@ -147,6 +148,7 @@ ArcLengthTable BuildArcLengthTable(const std::vector<glm::vec3>& points, bool cu
 }
 
 glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::vector<float> normalizedDistance){
+    //std::cout << "Evaluation called" << std::endl;
     t = std::clamp(t, 0.0f, 1.0f);
 
     const auto& distances = normalizedDistance;
@@ -160,12 +162,12 @@ glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::v
     );
 
     if (it == distances.begin()) {
-        std::cout << "returning begin" << std::endl;
+        //std::cout << "returning begin" << std::endl;
         return samples.front();
     }
 
     if (it == distances.end()) {
-        std::cout << "returning back" << std::endl;
+        //std::cout << "returning back" << std::endl;
         return samples.back();
     }
 
@@ -229,4 +231,64 @@ std::vector<ArcLengthTable> GetPathLines(Camera &camera) {
         ret.push_back(BuildArcLengthTable(points, false));
 	}
     return ret;
+}
+
+
+
+void exportCamera(const std::string& pName, std::vector<ArcLengthTable>& pathLUT) {
+    std::ofstream file(pName);
+    int seconds = static_cast<int>(pathLUT.size());
+    uint32_t version = 1;
+    uint32_t frameCount = seconds * 60;
+    //std::cout << seconds << " seconds" << std::endl;
+    glm::vec3 camPos;
+    glm::vec3 camDir;
+    glm::vec3 camUp = glm::vec3(0.0f, 1.0f, 0.0f);
+    float viewT;
+
+    for (int i = 0; i < seconds-1; ++i) {
+        //std::cout << "Evaluating segment " << i << std::endl;
+        for (size_t t = 0; t < 60; ++t) {
+            //std::cout << "Frame " << t << " out of 60" << std::endl;
+            camPos = EvaluateArcLength(pathLUT[i].samples, static_cast<float>(t)/60.0f, pathLUT[i].normalizedDistance);
+            viewT = static_cast<float>(t)/60.0f + 0.5f;
+            while (viewT >= 1.0f) {
+                viewT -= 1.0f;
+            }
+            if (viewT < static_cast<float>(t) / 60.0f) {
+                //std::cout << "Case 1" << std::endl;
+                camDir = i + 1 >= pathLUT.size() - 1 ? pathLUT[pathLUT.size()-1].samples[pathLUT[pathLUT.size() - 1].samples.size()-1] : EvaluateArcLength(pathLUT[i + 1].samples, viewT, pathLUT[i + 1].normalizedDistance);
+            }
+            else {
+                //std::cout << "Case 2" << std::endl;
+                camDir = EvaluateArcLength(pathLUT[i].samples, viewT, pathLUT[i].normalizedDistance);
+            }
+            camDir = glm::normalize(camDir);
+            glm::vec3 pivot = camPos + camDir;
+            glm::vec3 relativePosition = -camDir;
+
+            file
+                // pivot
+                << pivot.x << " " << pivot.y << " " << pivot.z << " "
+
+                // up
+                << camUp.x << " " << camUp.y << " " << camUp.z << " "
+
+                // position relative to pivot
+                << relativePosition.x << " "
+                << relativePosition.y << " "
+                << relativePosition.z << " ";
+
+            // Five identity quaternions
+            for (int i = 0; i < 5; ++i)
+                file << "0 0 0 1 ";
+
+            // yFov (radians), zNear, zFar
+            file << "1.0367 0.1 10000.0\n";
+        }
+    }
+    if (!file)
+        throw std::runtime_error("Failed to export camera");
+    file.close();
+    return;
 }

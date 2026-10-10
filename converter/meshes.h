@@ -57,6 +57,18 @@ struct BoundingBox {
 	float lim_Zminus = std::numeric_limits<float>::max();
 };
 
+struct PathsExport {
+	int FPS = -1;
+	int seconds = -1;
+	int numObj = -1;
+	std::vector<std::vector<glm::mat4>> transforms;
+
+
+};
+
+void ExportPaths(std::string pName, std::vector<Player>& players);
+
+
 /**
 * Imports .usd/.usda scenes into program
 * 
@@ -89,15 +101,6 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 
 
 /**
-* Exports the path of the selected player as a sequence of 3D points in the .txt format
-* 
-* @param player Container of the selected player
-* @param box Bounding box limiting the length of the player path
-* @param path Name of the export file
-*/
-void exportPlayer(const Player& player, BoundingBox& box, std::string path);
-
-/**
 * Imports all player paths found in the breadcrumbs.usd file, crops them to the scene and prepares them for rendering
 * 
 * @param path File location
@@ -107,13 +110,6 @@ void exportPlayer(const Player& player, BoundingBox& box, std::string path);
 */
 std::vector<Player> importPlayers(const std::string& path, BoundingBox& box);
 
-/**
-* Exports camera points as a sequence of 3D points into .txt format
-* 
-* @param points sequence of points to export
-* @param filename Name of the export file
-*/
-void exportCamera(const std::vector<glm::vec3>& points, std::string filename);
 
 /**
 * Exports scene statistics into .txt format

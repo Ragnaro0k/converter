@@ -2,6 +2,7 @@
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
+#include <string>
 
 
 /**
@@ -52,5 +53,13 @@ std::vector<ArcLengthTable> GetPathCurves(Camera& camera);
 * @return Interpolated camera position
 */
 glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::vector<float> normalizedDistance);
+
+/**
+* Exports camera points as a sequence of 3D points into .txt format
+*
+* @param points sequence of points to export
+* @param filename Name of the export file
+*/
+void exportCamera(const std::string& pName, std::vector<ArcLengthTable>& pathLUT);
 
 
