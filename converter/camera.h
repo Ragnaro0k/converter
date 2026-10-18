@@ -26,6 +26,12 @@ struct ArcLengthTable {
 	std::vector<glm::vec3> samplesTan;
 
 	std::vector<float> normalizedDistance;
+	float length = 0.0f;
+	std::vector<float> segmentLengths;
+	std::vector<float> segmentStartDistances;
+
+	float totalLength = 0.0f;
+	int samplesPerSegment = 100;
 };
 
 /**
@@ -52,7 +58,7 @@ std::vector<ArcLengthTable> GetPathCurves(Camera& camera);
 * @param normalizedDistance List of distances according to lookup table positions
 * @return Interpolated camera position
 */
-glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::vector<float> normalizedDistance);
+float GetCatmullRomT(const ArcLengthTable& table, int segment, float time, float startSpeed, float endSpeed);
 
 /**
 * Exports camera points as a sequence of 3D points into .txt format
@@ -60,6 +66,12 @@ glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::v
 * @param points sequence of points to export
 * @param filename Name of the export file
 */
-void exportCamera(const std::string& pName, std::vector<ArcLengthTable>& pathLUT);
+void exportCamera(const std::string& pName, std::vector<ArcLengthTable>& pathLUT, std::vector<float> jointSpeeds);
+
+glm::vec3 EvaluateHermiteArcLength(
+	const ArcLengthTable& table,
+	float time,
+	float startSpeed,
+	float endSpeed);
 
 

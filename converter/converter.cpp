@@ -263,7 +263,7 @@ int main()
 	bool showCamera = true; // switch whether camera path should be rendered
 	bool curves = false; // switch between staight lines and curvy camera movement
 	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1; // variables for the bounding box manipulation
-
+	std::vector<float> jointSpeeds;
 
 	// rendering data
 	std::vector<RenderMesh> renderMesh; //contains rendering meshes
@@ -584,17 +584,54 @@ int main()
 					if (!savePath.empty()) {
 						cameraState = curves ? CAM_CURVE : CAM_POLY;
 						pathLUT = cameraState == CAM_CURVE ? GetPathCurves(cameraPoints) : GetPathLines(cameraPoints);
+						jointSpeeds.resize(pathLUT.size() + 1);
+
+						if (!pathLUT.empty())
+						{
+							jointSpeeds.front() = pathLUT.front().length;
+							jointSpeeds.back() = pathLUT.back().length;
+
+							for (size_t i = 1; i < pathLUT.size(); ++i)
+							{
+								float a = pathLUT[i - 1].length;
+								float b = pathLUT[i].length;
+
+								jointSpeeds[i] = std::min(a, b);
+							}
+						}
 						cameraState = CAM_STATIONARY;
-						exportCamera(savePath, pathLUT);
+						exportCamera(savePath, pathLUT, jointSpeeds);
 					}
 				}
 
 				ImGui::SameLine();
 				if (ImGui::Button("Move camera") && cameraState == CAM_STATIONARY && cameraPoints.positions.size() > 0) {
 					cameraState = curves ? CAM_CURVE : CAM_POLY;
-					pathLUT = cameraState == CAM_CURVE ? GetPathCurves(cameraPoints) : GetPathLines(cameraPoints);
+
+					pathLUT = cameraState == CAM_CURVE
+						? GetPathCurves(cameraPoints)
+						: GetPathLines(cameraPoints);
+
+					// Calculate joint speeds once, after building the LUT
+					jointSpeeds.resize(pathLUT.size() + 1);
+
+					if (!pathLUT.empty())
+					{
+						jointSpeeds.front() = pathLUT.front().length;
+						jointSpeeds.back() = pathLUT.back().length;
+
+						for (size_t i = 1; i < pathLUT.size(); ++i)
+						{
+							float a = pathLUT[i - 1].length;
+							float b = pathLUT[i].length;
+
+							jointSpeeds[i] = std::min(a, b);
+						}
+					}
+
 					nextPoint = selectedCamPos > 0 ? selectedCamPos : 0;
-					timeDelta = 0;
+
+					timeDelta = 0.0f;
 					lastUpdate = clockupdate::now();
 					lastPos = cameraPoints.positions[nextPoint];
 				}
@@ -752,6 +789,7 @@ int main()
 				glm::mat4 model;
 				glm::mat4 proj;
 				glm::vec3 targetTMP;
+				int viewSegment;
 				switch (cameraState)
 				{
 				case CAM_STATIONARY:
@@ -765,30 +803,42 @@ int main()
 					);
 					break;
 				case CAM_POLY:
-					cameraPos = EvaluateArcLength(pathLUT[nextPoint].samples, timeDelta, pathLUT[nextPoint].normalizedDistance);
+					// Camera position using Hermite speed transition
+					cameraPos = EvaluateHermiteArcLength(
+						pathLUT[nextPoint],
+						timeDelta,
+						jointSpeeds[nextPoint],
+						jointSpeeds[nextPoint + 1]
+					);
 
-					if (nextPoint >= 0) {
-						const auto& previousPath = pathLUT[nextPoint];
+					// Look-ahead time
+					viewT = timeDelta + 0.5f;
 
-						if (!previousPath.samples.empty()) {
-							glm::vec3 previousEnd = previousPath.samples[0];
+					viewSegment = nextPoint;
 
-							targetTMP = cameraPos - (previousEnd - cameraPos);
-						}
-						else {
-							targetTMP = cameraPos + glm::vec3(0.0f, 0.0f, -1.0f);
-						}
+					if (viewT >= 1.0f)
+					{
+						viewT -= 1.0f;
+
+						if (viewSegment + 1 < static_cast<int>(pathLUT.size()))
+							viewSegment++;
+						else
+							viewT = 1.0f;
 					}
-					else {
-						std::cout << "No path!" << std::endl;
-						targetTMP =
-							cameraPos + glm::vec3(0.0f, 0.0f, -1.0f);
-					}
+
+					// Target using the same Hermite interpolation
+					targetTMP = EvaluateHermiteArcLength(
+						pathLUT[viewSegment],
+						viewT,
+						jointSpeeds[viewSegment],
+						jointSpeeds[viewSegment + 1]
+					);
 
 					view = glm::lookAt(
 						cameraPos,
 						targetTMP,
-						glm::vec3(0.0f, 1.0f, 0.0f));
+						glm::vec3(0.0f, 1.0f, 0.0f)
+					);
 
 					model = glm::mat4(1.0f);
 
@@ -798,23 +848,45 @@ int main()
 						0.1f
 					);
 
+					lastPos = cameraPos;
 					break;
 				case CAM_CURVE:
+					// Camera position using Hermite speed transition
+					cameraPos = EvaluateHermiteArcLength(
+						pathLUT[nextPoint],
+						timeDelta,
+						jointSpeeds[nextPoint],
+						jointSpeeds[nextPoint + 1]
+					);
+
+					// Look-ahead time
 					viewT = timeDelta + 0.5f;
-					while (viewT >= 1.0f) {
+
+					viewSegment = nextPoint;
+
+					if (viewT >= 1.0f)
+					{
 						viewT -= 1.0f;
+
+						if (viewSegment + 1 < static_cast<int>(pathLUT.size()))
+							viewSegment++;
+						else
+							viewT = 1.0f;
 					}
-					cameraPos = EvaluateArcLength(pathLUT[nextPoint].samples, timeDelta, pathLUT[nextPoint].normalizedDistance);
-					if (viewT < timeDelta) {
-						targetTMP = nextPoint + 1 >= pathLUT.size() - 1 ? cameraPoints.positions[cameraPoints.positions.size() - 1] : EvaluateArcLength(pathLUT[nextPoint + 1].samples, viewT, pathLUT[nextPoint + 1].normalizedDistance);
-					}
-					else {
-						targetTMP = EvaluateArcLength(pathLUT[nextPoint].samples, viewT, pathLUT[nextPoint].normalizedDistance);
-					}
+
+					// Target using the same Hermite interpolation
+					targetTMP = EvaluateHermiteArcLength(
+						pathLUT[viewSegment],
+						viewT,
+						jointSpeeds[viewSegment],
+						jointSpeeds[viewSegment + 1]
+					);
+
 					view = glm::lookAt(
 						cameraPos,
 						targetTMP,
-						glm::vec3(0.0f, 1.0f, 0.0f));
+						glm::vec3(0.0f, 1.0f, 0.0f)
+					);
 
 					model = glm::mat4(1.0f);
 
@@ -823,6 +895,7 @@ int main()
 						static_cast<float>(w) / h,
 						0.1f
 					);
+
 					lastPos = cameraPos;
 					break;
 				default:

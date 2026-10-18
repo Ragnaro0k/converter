@@ -7,6 +7,24 @@
 #include <iostream>
 #include <fstream>
 
+
+float HermiteDistance(
+    float t,
+    float length,
+    float startSpeed,
+    float endSpeed)
+{
+    t = std::clamp(t, 0.0f, 1.0f);
+
+    float t2 = t * t;
+    float t3 = t2 * t;
+
+    return
+        (t3 - 2.0f * t2 + t) * startSpeed +
+        (-2.0f * t3 + 3.0f * t2) * length +
+        (t3 - t2) * endSpeed;
+}
+
 /**
 * Calculates tangent to a point on the path
 * 
@@ -112,10 +130,7 @@ ArcLengthTable BuildArcLengthTable(const std::vector<glm::vec3>& points, bool cu
     glm::vec3 finalTangent = glm::normalize((points[points.size()-1]-points[points.size()-3])/2.0f);
 
     table.samplesTan.push_back(finalTangent);
-    /*for (int i = 0; i < table.samplesTan.size(); ++i) {
-        std::cout << "Sample " << i << " is " << table.samplesTan[i].x << " " << table.samplesTan[i].y << " " << table.samplesTan[i].z << " " << std::endl;
-    }
-    std::cout << std::endl;*/
+
     // First sample is at distance 0
     table.normalizedDistance.push_back(0.0f);
 
@@ -134,6 +149,27 @@ ArcLengthTable BuildArcLengthTable(const std::vector<glm::vec3>& points, bool cu
 
         table.normalizedDistance.push_back(totalLength);
     }
+    table.length = totalLength;
+    for (int i = 0; i <= numSegments; ++i)
+    {
+        int sampleIndex = i * samplesPerSegment;
+
+        float distance =
+            (i == numSegments)
+            ? totalLength
+            : table.normalizedDistance[sampleIndex];
+
+        table.segmentStartDistances.push_back(distance);
+    }
+
+    for (int i = 0; i < numSegments; ++i)
+    {
+        float length =
+            table.segmentStartDistances[i + 1] -
+            table.segmentStartDistances[i];
+
+        table.segmentLengths.push_back(length);
+    }
 
     // Normalize to [0, 1]
     if (totalLength > 0.0f)
@@ -148,7 +184,6 @@ ArcLengthTable BuildArcLengthTable(const std::vector<glm::vec3>& points, bool cu
 }
 
 glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::vector<float> normalizedDistance){
-    //std::cout << "Evaluation called" << std::endl;
     t = std::clamp(t, 0.0f, 1.0f);
 
     const auto& distances = normalizedDistance;
@@ -162,12 +197,10 @@ glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::v
     );
 
     if (it == distances.begin()) {
-        //std::cout << "returning begin" << std::endl;
         return samples.front();
     }
 
     if (it == distances.end()) {
-        //std::cout << "returning back" << std::endl;
         return samples.back();
     }
 
@@ -185,14 +218,40 @@ glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::v
     );
 }
 
+glm::vec3 EvaluateHermiteArcLength(
+    const ArcLengthTable& table,
+    float time,
+    float startSpeed,
+    float endSpeed)
+{
+    float distance = HermiteDistance(
+        time,
+        table.length,
+        startSpeed,
+        endSpeed
+    );
+
+    float normalizedDistance = table.length > 0.0f
+        ? distance / table.length
+        : 0.0f;
+
+    normalizedDistance = std::clamp(
+        normalizedDistance, 0.0f, 1.0f
+    );
+
+    return EvaluateArcLength(
+        table.samples,
+        normalizedDistance,
+        table.normalizedDistance
+    );
+}
+
 std::vector<ArcLengthTable> GetPathCurves(Camera &camera) {
     std::vector<ArcLengthTable> ret;
     if (!camera.original[0] || !camera.original[camera.original.size() - 1]) return ret;
     int offset = 0;
     for (int i = 0; i < camera.origSize; i++) {
-        //process each proper segment
         std::vector<glm::vec3> points;
-        std::cout << "Segment " << i << " starting at index " << i + offset << std::endl;
         points.push_back(i == 0 ? camera.positions[i + offset] : camera.positions[i - 1 + offset]);
         points.push_back(camera.positions[i + offset]);
         while (!camera.original[i + offset + 1]) {
@@ -201,12 +260,7 @@ std::vector<ArcLengthTable> GetPathCurves(Camera &camera) {
         }
         points.push_back(camera.positions[i + offset + 1]);
         points.push_back(i == camera.origSize - 2 ? camera.positions[i + offset + 1] : camera.positions[i + offset + 2]);
-        std::cout << "Segment " << i << " ending at index " << i + offset + 2 << std::endl;
-
-        //here I should have the complete segment points
-        std::cout << "Segment " << i << " contains " << points.size() << " points" << std::endl;
         ret.push_back(BuildArcLengthTable(points, true));
-        std::cout << std::endl;
     }
     return ret;
 }
@@ -235,56 +289,58 @@ std::vector<ArcLengthTable> GetPathLines(Camera &camera) {
 
 
 
-void exportCamera(const std::string& pName, std::vector<ArcLengthTable>& pathLUT) {
+void exportCamera(const std::string& pName, std::vector<ArcLengthTable>& pathLUT, std::vector<float> jointSpeeds) {
     std::ofstream file(pName);
     int seconds = static_cast<int>(pathLUT.size());
     uint32_t version = 1;
     uint32_t frameCount = seconds * 60;
-    //std::cout << seconds << " seconds" << std::endl;
     glm::vec3 camPos;
     glm::vec3 camDir;
     glm::vec3 camUp = glm::vec3(0.0f, 1.0f, 0.0f);
     float viewT;
 
     for (int i = 0; i < seconds-1; ++i) {
-        //std::cout << "Evaluating segment " << i << std::endl;
         for (size_t t = 0; t < 60; ++t) {
-            //std::cout << "Frame " << t << " out of 60" << std::endl;
-            camPos = EvaluateArcLength(pathLUT[i].samples, static_cast<float>(t)/60.0f, pathLUT[i].normalizedDistance);
-            viewT = static_cast<float>(t)/60.0f + 0.5f;
-            while (viewT >= 1.0f) {
+
+            camPos = EvaluateHermiteArcLength(
+                pathLUT[i],
+                static_cast<float>(t) / 60.0f,
+                jointSpeeds[i],
+                jointSpeeds[i + 1]
+            );
+
+            // Look-ahead time
+            viewT = static_cast<float>(t) / 60.0f + 0.5f;
+
+            int viewSegment = i;
+
+            if (viewT >= 1.0f)
+            {
                 viewT -= 1.0f;
+
+                if (viewSegment + 1 < static_cast<int>(pathLUT.size()))
+                    viewSegment++;
+                else
+                    viewT = 1.0f;
             }
-            if (viewT < static_cast<float>(t) / 60.0f) {
-                //std::cout << "Case 1" << std::endl;
-                camDir = i + 1 >= pathLUT.size() - 1 ? pathLUT[pathLUT.size()-1].samples[pathLUT[pathLUT.size() - 1].samples.size()-1] : EvaluateArcLength(pathLUT[i + 1].samples, viewT, pathLUT[i + 1].normalizedDistance);
-            }
-            else {
-                //std::cout << "Case 2" << std::endl;
-                camDir = EvaluateArcLength(pathLUT[i].samples, viewT, pathLUT[i].normalizedDistance);
-            }
-            camDir = glm::normalize(camDir);
+
+            // Target using the same Hermite interpolation
+            camDir = EvaluateHermiteArcLength(
+                pathLUT[viewSegment],
+                viewT,
+                jointSpeeds[viewSegment],
+                jointSpeeds[viewSegment + 1]
+            );
+
+            //camDir = glm::normalize(camDir);
             glm::vec3 pivot = camPos + camDir;
             glm::vec3 relativePosition = -camDir;
-
+            glm::mat4 view = glm::lookAt(camPos, camDir, glm::vec3(0.0f, 1.0f, 0.0f));
             file
-                // pivot
-                << pivot.x << " " << pivot.y << " " << pivot.z << " "
-
-                // up
-                << camUp.x << " " << camUp.y << " " << camUp.z << " "
-
-                // position relative to pivot
-                << relativePosition.x << " "
-                << relativePosition.y << " "
-                << relativePosition.z << " ";
-
-            // Five identity quaternions
-            for (int i = 0; i < 5; ++i)
-                file << "0 0 0 1 ";
-
-            // yFov (radians), zNear, zFar
-            file << "1.0367 0.1 10000.0\n";
+                << view[0][0] << " " << view[0][1] << " " << view[0][2] << " " << view[0][3] << " "
+                << view[1][0] << " " << view[1][1] << " " << view[1][2] << " " << view[1][3] << " "
+                << view[2][0] << " " << view[2][1] << " " << view[2][2] << " " << view[2][3] << " "
+                << view[3][0] << " " << view[3][1] << " " << view[3][2] << " " << view[3][3] << "\n";
         }
     }
     if (!file)
