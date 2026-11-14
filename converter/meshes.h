@@ -25,6 +25,7 @@ struct Player {
 	GLuint VAO;
 	GLuint VBO;
 	int id;
+	int pathStart = 0;
 };
 
 /**
@@ -65,8 +66,15 @@ struct PathsExport {
 
 
 };
-
-void ExportPaths(std::string pName, std::vector<Player>& players);
+/**
+* Exports animation of player paths frame by frame into a text based format, for Orchard Project
+* 
+* @param pName absolute path to the file
+* @param players container for player paths to be exported
+* @param nPaths number of desired paths (is always min size of the players container, if higher, additional paths are made by offsetting)
+* @param switch between 30 and 60 FPS export options
+*/
+void ExportPaths(std::string pName, std::vector<Player>& players, int nPaths, bool fps30);
 
 
 /**
@@ -88,7 +96,7 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 * @param meshes Containers with meshes included in the scene 
 * @param filename Name of the export file
 */
-void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename);
+void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, bool &cubes, std::vector<Player> &players, int nPaths);
 
 /**
 * Exports the imported scene in the .obj format according to bounding box limitations
@@ -97,7 +105,7 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename);
 * @param filename Name of the export file
 * @param box Bounding box limiting the dimensions of the scene
 */
-void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box);
+void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool &cubes, std::vector<Player>& players, int nPaths);
 
 
 /**

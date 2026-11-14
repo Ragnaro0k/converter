@@ -14,6 +14,7 @@
 #include <glm/gtx/string_cast.hpp>
 #include <cstdint>
 #include <glm/glm.hpp>
+#include "glm/ext.hpp"
 
 /** Maximum number of triangles per buffer */
 const size_t MAX_TRIANGLES = 1'000'000;
@@ -586,11 +587,78 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 	return meshes;
 }
 
+std::vector<glm::vec3> GetCube(glm::vec3 point) {
+	//point = glm::vec3(0.0f);
+	std::vector<glm::vec3> ret(8);
+	ret[0] = glm::vec3(point.x - 0.5f, point.y, point.z - 0.5f);
+	ret[1] = glm::vec3(point.x + 0.5f, point.y, point.z - 0.5f);
+	ret[2] = glm::vec3(point.x + 0.5f, point.y, point.z + 0.5f);
+	ret[3] = glm::vec3(point.x - 0.5f, point.y, point.z + 0.5f);
+	ret[4] = glm::vec3(point.x - 0.5f, point.y + 3.0f, point.z - 0.5f);
+	ret[5] = glm::vec3(point.x + 0.5f, point.y + 3.0f, point.z - 0.5f);
+	ret[6] = glm::vec3(point.x + 0.5f, point.y + 3.0f, point.z + 0.5f);
+	ret[7] = glm::vec3(point.x - 0.5f, point.y + 3.0f, point.z + 0.5f);
+	return ret;
+}
+/*
+* Increase the amount of player paths to export creating new ones from existing paths, adding an offset to them
+* @param players existing player paths
+* @param nPaths desired maximal number of total paths (cannot be lower than number of original paths)
+* @return original player paths expanded with new ones
+**/
+std::vector<Player> GetPathsCount(std::vector<Player> players, int nPaths) {
+	int index = 0;
+	int loop = 1;
+	bool flag = true;
+	int origSize = static_cast<int>(players.size());
+	while (players.size() < nPaths) {
 
+		//if the index reached the end of the original vector, check if at least one new node was made; if not, break the cycle, otherwise increase loop and reset index
+		if (index == origSize) {
+			if (flag) { //no new node was found suitable for expansion
+				std::cout << "No new suitable node was found for expansion, exiting..." << std::endl;
+				break;
+			}
+			flag = true;
+			index = 0;
+			loop++;
+			std::cout << "\nStarting loop " << loop << std::endl;
 
-void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box) {
+		}
+
+		if (static_cast<int>(players[index].positions.size()) <= loop + 1) {
+			std::cout << "Node " << players[index].id << " no longer suitable for expansion" << std::endl;
+			index++;
+			continue;
+		}
+		
+		//check the node and expand it, if possible
+		int startIdx = 0; //TODO
+		int divisor = static_cast<int>(players[index].positions.size()) >= 10 ? 10 : 2;
+		int shift = static_cast<int>(players[index].positions.size() / divisor);
+		int overflow = (loop * shift) / static_cast<int>(players[index].positions.size());
+		startIdx = ((loop * shift) + overflow) % static_cast<int>(players[index].positions.size());
+		if (startIdx >= static_cast<int>(players[index].positions.size())) std::cout << "ERROR: Node " << players[index].id << " created index of " << startIdx << ", limit is " << players[index].positions.size() << std::endl;
+		flag = false;
+		Player newPath = players[index];
+		newPath.pathStart = startIdx;
+		std::cout << "Node " << players[index].id << " has been expanded: ID " << static_cast<int>(players.size()) << ", offset " << startIdx << std::endl;
+		newPath.id = static_cast<int>(players.size());
+		players.push_back(newPath);
+		//move the start of the vector to the new index and put everything that was befor eit, behind it
+
+		index++;
+
+		
+	}
+	
+	return players;
+}
+
+void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename, BoundingBox& box, bool &cubes, std::vector<Player>& players, int nPaths) {
 	std::vector<Mesh> reducedMeshes;
-
+	std::vector<Player> newPlayers = GetPathsCount(players, nPaths);
+	//std::vector<Player> newPlayers = players;
 	for (auto& mesh : meshes) {
 		Mesh reducedmesh;
 		std::vector<bool> vertexUsed(mesh.vertices.size(), false);
@@ -641,13 +709,38 @@ void exportReduced(const std::vector<Mesh>& meshes, const std::string& filename,
 		}
 
 		vertexOffset += mesh.vertices.size();
+
+	}
+	if (cubes) {
+		//need to create a cube at the starting position of every player
+		for (auto& p : newPlayers) {
+			file << "o player\_" << p.id << "\n";
+			glm::vec3 start = p.positions[p.pathStart];
+			for (auto& v : GetCube(start)) {
+				file << "v " << v.x << " " << v.y << " " << v.z << "\n";
+			}
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 2 << " " << vertexOffset + 1 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 3 << " " << vertexOffset + 2 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 1 << " " << vertexOffset + 5 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 5 << " " << vertexOffset + 4 << "\n";
+			file << "f " << vertexOffset + 1 << " " << vertexOffset + 2 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 6 << " " << vertexOffset + 5 << "\n";
+			file << "f " << vertexOffset + 2 << " " << vertexOffset + 3 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 3 << " " << vertexOffset + 7 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 4 << " " << vertexOffset + 5 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 4 << " " << vertexOffset + 6 << " " << vertexOffset + 7 << "\n";
+			file << "f " << vertexOffset + 3 << " " << vertexOffset + 0 << " " << vertexOffset + 4 << "\n";
+			file << "f " << vertexOffset + 4 << " " << vertexOffset + 7 << " " << vertexOffset + 3 << "\n";
+
+			vertexOffset += 8;
+		}
 	}
 	file.close();
 	std::cout << "Exported reduced scene to " << filename << std::endl;
 }
 
-void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename) {
-
+void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename, bool &cubes, std::vector<Player>& players, int nPaths) {
+	std::vector<Player> newPlayers = GetPathsCount(players, nPaths);
 	std::ofstream file(filename);
 	if (!file.is_open()) {
 		throw std::runtime_error("Cannot open file: " + filename);
@@ -669,6 +762,30 @@ void exportMeshes(const std::vector<Mesh>& meshes, const std::string& filename) 
 		vertexOffset += mesh.vertices.size();
 	}
 
+	if (cubes) {
+		//need to create a cube at the starting position of every player
+		for (auto& p : newPlayers) {
+			file << "o player\_" << p.id << "\n";
+			glm::vec3 start = p.positions[p.pathStart];
+			for (auto& v : GetCube(start)) {
+				file << "v " << v.x << " " << v.y << " " << v.z << "\n";
+			}
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 2 << " " << vertexOffset + 1 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 3 << " " << vertexOffset + 2 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 1 << " " << vertexOffset + 5 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 5 << " " << vertexOffset + 4 << "\n";
+			file << "f " << vertexOffset + 1 << " " << vertexOffset + 2 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 0 << " " << vertexOffset + 6 << " " << vertexOffset + 5 << "\n";
+			file << "f " << vertexOffset + 2 << " " << vertexOffset + 3 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 3 << " " << vertexOffset + 7 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 4 << " " << vertexOffset + 5 << " " << vertexOffset + 6 << "\n";
+			file << "f " << vertexOffset + 4 << " " << vertexOffset + 6 << " " << vertexOffset + 7 << "\n";
+			file << "f " << vertexOffset + 3 << " " << vertexOffset + 0 << " " << vertexOffset + 4 << "\n";
+			file << "f " << vertexOffset + 4 << " " << vertexOffset + 7 << " " << vertexOffset + 3 << "\n";
+
+			vertexOffset += 8;
+		}
+	}
 
 	file.close();
 	std::cout << "Exported scene to " << filename << std::endl;
@@ -786,7 +903,7 @@ std::vector<Player> importPlayers(const std::string& path, BoundingBox& box) {
 	std::vector<Player> newRet;
 	counter = 0;
 	for (auto& p : ret) {
-		if (!p.positions.empty()) {
+		if (!p.positions.empty() && p.positions.size() > 1) {
 			p.id = counter;
 			newRet.push_back(p);
 			counter++;
@@ -818,43 +935,60 @@ std::vector<Player> importPlayers(const std::string& path, BoundingBox& box) {
 }
 
 
-void ExportPaths(std::string pName, std::vector<Player>& players) {
+void ExportPaths(std::string pName, std::vector<Player>& players, int nPaths, bool fps30) {
 
-	std::ofstream file(pName, std::ios::binary);
+	std::ofstream file(pName);
+	std::vector<Player> newPlayers = GetPathsCount(players, nPaths);
 	int seconds = -1;
-	for (auto& pl : players) {
+	for (auto& pl : newPlayers) {
 		seconds = static_cast<int>(pl.positions.size()) > seconds ? static_cast<int>(pl.positions.size()) : seconds;
 	}
-	uint32_t version = 1;
-	uint32_t frameCount = seconds * 60;
-	uint32_t objectCount = static_cast<uint32_t>(players.size());
+	int fps = fps30 ? 30 : 60;
+	int frameCount = seconds * fps;
+	int objectCount = static_cast<int>(newPlayers.size());
 
-	file.write("MOTN", 4);
-	file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-	file.write(reinterpret_cast<const char*>(&frameCount), sizeof(frameCount));
-	file.write(reinterpret_cast<const char*>(&objectCount), sizeof(objectCount));
+	file << frameCount << "\n";
+	file << objectCount << "\n";
 
 	glm::vec3 playerUp = glm::vec3(0.0f, 1.0f, 0.0f);
 	glm::vec3 lastPos, nextPos, playerPos, playerTan, x, y, z;
 	glm::mat4 out = glm::mat4(1.0f);
 
 	for (int i = 0; i < seconds; ++i) {
-		for (int t = 0; t < 60; ++t) {
-			float delta = 1.0f / static_cast<float>(t);
-			for (size_t j = 0; j < players.size(); ++j) {
-				int playerPoint = i % players[j].positions.size() - 1;
-				lastPos = players[j].positions[playerPoint];
-				nextPos = players[j].positions[playerPoint + 1];
+		std::cout << "Exporting second " << i+1 << "/" << seconds << std::endl;
+		for (int t = 0; t < fps; ++t) {
+			float delta = static_cast<float>(t) / static_cast<float>(fps);
+			for (size_t j = 0; j < newPlayers.size(); ++j) {
+				//std::cout << "Player " << players[j].id << std::endl;
+				int playerPoint = -1;
+				if (static_cast<int>(newPlayers[j].positions.size()) < 2) {
+					std::cout << "ERROR: Player " << newPlayers[j].id << " has less than 2 positions! Ordering invalidated!\n";
+				}
+				playerPoint = (i + newPlayers[j].pathStart) % (static_cast<int>(newPlayers[j].positions.size()) - 1);
+				//std::cout << "Player point " << playerPoint << std::endl;
+				//if (players[j].positions.empty()) std::cout << "Player detected empty!" << std::endl;
+				lastPos = newPlayers[j].positions[playerPoint];
+				nextPos = newPlayers[j].positions[playerPoint + 1];
+				//std::cout << glm::to_string(lastPos) << " || " << glm::to_string(nextPos) << std::endl;
 				playerPos = lastPos + delta * (nextPos - lastPos);
-				playerTan = glm::normalize(nextPos - lastPos);
+				//std::cout << glm::to_string(playerPos) << std::endl;
+				/*playerTan = nextPos != lastPos ? glm::normalize(nextPos - lastPos) : glm::vec3(1.0f, 0.0f, 0.0f);
 				x = playerTan;
 				z = glm::normalize(glm::cross(x, playerUp));
 				y = glm::cross(z, x);
 				out[0] = glm::vec4(x, 0.0f);
 				out[1] = glm::vec4(y, 0.0f);
 				out[2] = glm::vec4(z, 0.0f);
-				out[3] = glm::vec4(playerPos, 1.0f);
-				file.write(reinterpret_cast<const char*>(glm::value_ptr(out)), sizeof(float) * 16);
+				out[3] = glm::vec4(playerPos, 1.0f);*/
+				glm::vec3 initialPos = newPlayers[j].positions[newPlayers[j].pathStart];
+
+				glm::vec3 displacement = playerPos - initialPos;
+
+				out = glm::translate(glm::mat4(1.f), displacement);
+				file << out[0][0] << " " << out[0][1] << " " << out[0][2] << " " << out[0][3] << " "
+					<< out[1][0] << " " << out[1][1] << " " << out[1][2] << " " << out[1][3] << " "
+					<< out[2][0] << " " << out[2][1] << " " << out[2][2] << " " << out[2][3] << " "
+					<< out[3][0] << " " << -out[3][2] << " " << out[3][1] << " " << out[3][3] << "\n";
 			}
 		}
 	}
@@ -862,4 +996,13 @@ void ExportPaths(std::string pName, std::vector<Player>& players) {
 		throw std::runtime_error("Failed to write motion data");
 	}
 	file.close();
+	pName = pName.substr(0, pName.find_last_of('\\') + 1) + "PlayerNames.txt";
+	std::ofstream file_names(pName);
+	file_names << "Copy the next line into the motion.select variable in OP\n";
+	for (auto& p : newPlayers) {
+		file_names << "\"player\_" << p.id << "\", ";
+	}
+	file_names << "\n";
+	file_names.close();
+	std::cout << "Copy the output of PlayerNames.txt into the motion.select variable in OP" << std::endl;
 }

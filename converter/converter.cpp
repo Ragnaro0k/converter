@@ -254,6 +254,7 @@ int main()
 	float moveSpeed = 5.0f; // pan movement speed modifier
 	float zoomSpeed = 5.0f; // zoom speed modifier
 	bool wireframe = false; // wireframe rendering option switch
+	bool playerCubes = false;
 	int selectedPath = -1; // selected path to .usd scene
 	int selectedPlayer = -1; // selected player path from the list
 	int randomSampling = 1; // random sampling option variable
@@ -264,6 +265,8 @@ int main()
 	bool curves = false; // switch between staight lines and curvy camera movement
 	float xMinWorld = 0, xMaxWorld = 1, yMinWorld = 0, yMaxWorld = 1, zMinWorld = 0, zMaxWorld = 1; // variables for the bounding box manipulation
 	std::vector<float> jointSpeeds;
+	int nPaths = 0;
+	bool fps30 = false;
 
 	// rendering data
 	std::vector<RenderMesh> renderMesh; //contains rendering meshes
@@ -413,13 +416,15 @@ int main()
 						if (xMaxWorld != 1 || xMinWorld != 0 ||
 							yMaxWorld != 1 || yMinWorld != 0 ||
 							zMaxWorld != 1 || zMinWorld != 0) {
-							exportReduced(meshes, savePath, box);
+							exportReduced(meshes, savePath, box, playerCubes, players, nPaths);
 						}
 						else {
-							exportMeshes(meshes, savePath);
+							exportMeshes(meshes, savePath, playerCubes, players, nPaths);
 						}
 					}
 				}
+				ImGui::SameLine();
+				ImGui::Checkbox("Use player cubes", &playerCubes);
 				if (ImGui::Button("Export stats") && !meshes.empty()) {
 					std::string savePath = saveFileTxt();
 
@@ -434,7 +439,11 @@ int main()
 						}
 					}
 				}
+				ImGui::SameLine();
+				ImGui::Checkbox("30FPS", &fps30);
 
+				ImGui::InputInt("Number of paths", &nPaths);
+				std::clamp(nPaths, 0, 10000);
 				ImGui::End();
 			}
 
@@ -490,12 +499,22 @@ int main()
 					}
 				}
 				if (ImGui::Button("Remove selection") && selectedPlayer != -1) {
+					std::vector<Player> tmp;
+					for (size_t i = 0; i < players.size(); ++i) {
+						if (i != selectedPlayer) {
+							players[i].id = i;
+							players[i].name = "player_" + std::to_string(i);
+							tmp.push_back(players[i]);
+						}
+					}
+					players = tmp;
 					selectedPlayer = -1;
+
 				}
 				if (ImGui::Button("Export paths")) {
-					std::string savePath = saveFileMotion();
+					std::string savePath = saveFileTxt();
 					if (!savePath.empty()) {
-						ExportPaths(savePath, players);
+						ExportPaths(savePath, players, nPaths, fps30);
 					}
 				}
 				ImGui::Separator();
