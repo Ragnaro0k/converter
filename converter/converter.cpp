@@ -17,7 +17,6 @@
 #include <windows.h>
 #include <commdlg.h>
 #include <chrono>
-#include <thread>
 
 
 using clockupdate = std::chrono::steady_clock;
@@ -252,7 +251,7 @@ int main()
 	// UI interactions
 	std::vector<std::string> paths; // list of paths of scenes included to be imported
 	float moveSpeed = 5.0f; // pan movement speed modifier
-	float zoomSpeed = 5.0f; // zoom speed modifier
+	float zoomSpeed = 50.0f; // zoom speed modifier
 	bool wireframe = false; // wireframe rendering option switch
 	bool playerCubes = false;
 	int selectedPath = -1; // selected path to .usd scene
@@ -370,7 +369,10 @@ int main()
 					float moveSpeed = 5.0f;
 					float zoomSpeed = 5.0f;
 					box = tmp;
-					meshes = importMesh(paths, renderMesh, randomSampling, box);
+					meshes = importMesh(paths, renderMesh, randomSampling, box, &target);
+					direction.x = target.x - 1.0f;
+					direction.y = target.y;
+					direction.z = target.z - 1.0f;
 					if (!meshes.empty() && !renderMesh.empty()) {
 						std::cout << "Mesh loaded and rotated" << std::endl;
 					}

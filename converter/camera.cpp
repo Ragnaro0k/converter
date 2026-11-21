@@ -8,12 +8,7 @@
 #include <fstream>
 
 
-float HermiteDistance(
-    float t,
-    float length,
-    float startSpeed,
-    float endSpeed)
-{
+float HermiteDistance( float t, float length, float startSpeed, float endSpeed){
     t = std::clamp(t, 0.0f, 1.0f);
 
     float t2 = t * t;
@@ -218,12 +213,7 @@ glm::vec3 EvaluateArcLength(const std::vector<glm::vec3>& table, float t, std::v
     );
 }
 
-glm::vec3 EvaluateHermiteArcLength(
-    const ArcLengthTable& table,
-    float time,
-    float startSpeed,
-    float endSpeed)
-{
+glm::vec3 EvaluateHermiteArcLength(const ArcLengthTable& table, float time, float startSpeed,  float endSpeed){
     float distance = HermiteDistance(
         time,
         table.length,

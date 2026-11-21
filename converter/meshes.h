@@ -13,6 +13,7 @@ struct Mesh {
 	std::vector<uint32_t> triangles;
 	/** Name extracted from the .usd/.usda scene */
 	std::string name;
+	glm::vec3 centre = glm::vec3(0.0f);
 };
 
 /**
@@ -88,7 +89,7 @@ void ExportPaths(std::string pName, std::vector<Player>& players, int nPaths, bo
 * @param box Container for the scene bounding box parametres
 * @return Containers with loaded and transformed meshes
 */
-std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<RenderMesh>& renderMesh, int randSampl, BoundingBox& box);
+std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<RenderMesh>& renderMesh, int randSampl, BoundingBox& box, glm::vec3 *target);
 
 /**
 * Exports the entire imported scene in the .obj format

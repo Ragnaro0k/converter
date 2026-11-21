@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <glm/glm.hpp>
 #include "glm/ext.hpp"
+#include <unordered_map>
 
 /** Maximum number of triangles per buffer */
 const size_t MAX_TRIANGLES = 1'000'000;
@@ -476,7 +477,7 @@ void rotateMesh(Mesh& mesh) {
 		return;
 }
 
-std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<RenderMesh>& renderMesh, int randSampl, BoundingBox& box) {
+std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<RenderMesh>& renderMesh, int randSampl, BoundingBox& box, glm::vec3 *target) {
 	std::vector<RawMesh> rawMeshes;
 	try {
 		rawMeshes = loadFromPython(paths);
@@ -518,9 +519,10 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 	if (!tmp.vertices.empty()) {
 		renderMesh.push_back(tmp);
 	}
-
+	glm::vec3 camEye = glm::vec3(0.0f);
 	for (auto& mesh : meshes) {
 		for (auto& vert : mesh.vertices) {
+			mesh.centre += vert;
 			if (vert.x > box.lim_Xplus) box.lim_Xplus = vert.x;
 			if (vert.x < box.lim_Xminus) box.lim_Xminus = vert.x;
 			if (vert.y > box.lim_Yplus) box.lim_Yplus = vert.y;
@@ -528,14 +530,10 @@ std::vector<Mesh> importMesh(const std::vector<std::string>& paths, std::vector<
 			if (vert.z > box.lim_Zplus) box.lim_Zplus = vert.z;
 			if (vert.z < box.lim_Zminus) box.lim_Zminus = vert.z;
 		}
+		mesh.centre /= static_cast<float>(mesh.vertices.size());
+		camEye += mesh.centre;
 	}
-
-	/*box.lim_Xminus -= 1;
-	box.lim_Yminus -= 1;
-	box.lim_Zminus -= 1;
-	box.lim_Xplus += 1;
-	box.lim_Yplus += 1;
-	box.lim_Zplus += 1;*/
+	*target = camEye / static_cast<float>(meshes.size());
 
 	box.Xplus = box.lim_Xplus;
 	box.Xminus = box.lim_Xminus;
@@ -611,6 +609,7 @@ std::vector<Player> GetPathsCount(std::vector<Player> players, int nPaths) {
 	int loop = 1;
 	bool flag = true;
 	int origSize = static_cast<int>(players.size());
+	std::vector<std::unordered_map <int, bool>> usedIndices(origSize);
 	while (players.size() < nPaths) {
 
 		//if the index reached the end of the original vector, check if at least one new node was made; if not, break the cycle, otherwise increase loop and reset index
@@ -632,12 +631,20 @@ std::vector<Player> GetPathsCount(std::vector<Player> players, int nPaths) {
 			continue;
 		}
 		
-		//check the node and expand it, if possible
-		int startIdx = 0; //TODO
-		int divisor = static_cast<int>(players[index].positions.size()) >= 10 ? 10 : 2;
+		//expand the node
+		int startIdx = 0;
+		int divisor = static_cast<int>(players[index].positions.size()) > 10 ? 10 : 2;
 		int shift = static_cast<int>(players[index].positions.size() / divisor);
 		int overflow = (loop * shift) / static_cast<int>(players[index].positions.size());
+		std::cout << "Size " << players[index].positions.size() << ", divisor " << divisor << ", shift " << shift << ", overflow " << overflow << std::endl;
 		startIdx = ((loop * shift) + overflow) % static_cast<int>(players[index].positions.size());
+		std::cout << "Original value is " << startIdx << std::endl;
+		while (usedIndices[index].contains(startIdx) || startIdx == 0) {
+			startIdx++;
+			startIdx %= static_cast<int>(players[index].positions.size());
+		}
+		std::cout << "Final value is " << startIdx << std::endl;
+		usedIndices[index][startIdx] = true;
 		if (startIdx >= static_cast<int>(players[index].positions.size())) std::cout << "ERROR: Node " << players[index].id << " created index of " << startIdx << ", limit is " << players[index].positions.size() << std::endl;
 		flag = false;
 		Player newPath = players[index];
@@ -645,7 +652,7 @@ std::vector<Player> GetPathsCount(std::vector<Player> players, int nPaths) {
 		std::cout << "Node " << players[index].id << " has been expanded: ID " << static_cast<int>(players.size()) << ", offset " << startIdx << std::endl;
 		newPath.id = static_cast<int>(players.size());
 		players.push_back(newPath);
-		//move the start of the vector to the new index and put everything that was befor eit, behind it
+		//move the start of the vector to the new index and put everything that was before it, behind it
 
 		index++;
 
